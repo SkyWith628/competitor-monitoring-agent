@@ -33,6 +33,22 @@ tests/<역할 폴더>/    각자 자기 폴더 테스트
 - 브랜치: `feat/<폴더>-<내용>` (예: `feat/site_monitor-uniqlo`), PR 리뷰 짝 A↔B, C↔D
 - `.github/CODEOWNERS`에 역할별 담당자가 지정돼 있어 PR을 열면 리뷰어가 자동 지정됨
 
+### main 브랜치 보호 규칙
+`main`은 GitHub 규칙(Settings → Rules → Rulesets → `main 보호`)으로 보호된다. 아래를 만족해야 병합된다.
+
+| 규칙 | 내용 |
+|---|---|
+| PR 필수 | `main`에 직접 push 불가. 브랜치를 만들어 PR로만 병합 |
+| 승인 1명 이상 | 승인이 1개 이상 있어야 병합 가능 |
+| 코드 오너 승인 | 바뀐 파일의 CODEOWNERS 담당자가 승인해야 함 |
+| 새 커밋 = 재승인 | 승인 후 커밋을 추가하면 기존 승인이 취소됨 |
+| CI 통과 | `ci` 워크플로의 `test` 작업(ruff + pytest)이 성공해야 함 |
+| 강제 push·삭제 금지 | `main`에 force push, 브랜치 삭제 불가 |
+
+- **예외:** 레포 관리자(D)는 PR 화면에서만 규칙을 건너뛰고 병합할 수 있다. D 폴더는 코드 오너가 본인이라 셀프 승인이 안 되기 때문. 관리자도 `main`에 직접 push는 불가.
+- **`app/core/` 4명 승인은 자동 강제가 아니다.** GitHub는 코드 오너 중 1명만 승인하면 통과시키므로, 4명 전원 승인은 팀 약속으로 지킨다.
+- 작업 흐름: `git switch -c feat/<폴더>-<내용>` → 커밋 → `git push -u origin <브랜치>` → GitHub에서 PR 생성 → CI 통과 + 리뷰 승인 → 병합
+
 ## 시작하기
 ```powershell
 python -m venv .venv; .venv\Scripts\activate
