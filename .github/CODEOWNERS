@@ -1,21 +1,21 @@
 # 폴더별 담당자 — PR이 열리면 해당 담당자에게 리뷰 요청이 자동으로 간다.
-# 팀원은 GitHub 계정 이메일로 지정. @아이디로 바꿔도 된다.
+# 담당자는 GitHub 아이디(@ 포함)로 지정.
 
 # 공통 계약: 바꾸면 모두에게 영향 → 전원 리뷰
-/app/core/                 gababayo@gmail.com yudang1223@gmail.com michelle20.personal@gmail.com @SkyWith628
+/app/core/                 @gababayo @yudang1223 @michelle20personal-bot @SkyWith628
 
 # A — 사이트 수집 & 변화 감지
-/app/site_monitor/         gababayo@gmail.com
-/tests/site_monitor/       gababayo@gmail.com
+/app/site_monitor/         @gababayo
+/tests/site_monitor/       @gababayo
 
 # B — 뉴스·SNS 수집
-/app/media_monitor/        yudang1223@gmail.com
-/config/brands.yaml        yudang1223@gmail.com gababayo@gmail.com
-/tests/media_monitor/      yudang1223@gmail.com
+/app/media_monitor/        @yudang1223
+/config/brands.yaml        @yudang1223 @gababayo
+/tests/media_monitor/      @yudang1223
 
 # C — LLM 분석 & 리포트 콘텐츠
-/app/analysis/             michelle20.personal@gmail.com
-/tests/analysis/           michelle20.personal@gmail.com
+/app/analysis/             @michelle20personal-bot
+/tests/analysis/           @michelle20personal-bot
 
 # D — 플랫폼·알림·통합
 /app/infra/                @SkyWith628
