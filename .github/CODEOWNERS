@@ -2,7 +2,7 @@
 # 아래 TEAM_X_GITHUB_ID 를 팀원 GitHub 아이디(@ 포함)로 바꿔서 사용.
 
 # 공통 계약: 바꾸면 모두에게 영향 → 전원 리뷰
-/app/core/                 TEAM_A_GITHUB_ID TEAM_B_GITHUB_ID TEAM_C_GITHUB_ID TEAM_D_GITHUB_ID
+/app/core/                 TEAM_A_GITHUB_ID TEAM_B_GITHUB_ID TEAM_C_GITHUB_ID @SkyWith628
 
 # A — 사이트 수집 & 변화 감지
 /app/site_monitor/         TEAM_A_GITHUB_ID
@@ -18,7 +18,7 @@
 /tests/analysis/           TEAM_C_GITHUB_ID
 
 # D — 플랫폼·알림·통합
-/app/infra/                TEAM_D_GITHUB_ID
-/app/__main__.py           TEAM_D_GITHUB_ID
-/.github/                  TEAM_D_GITHUB_ID
-/pyproject.toml            TEAM_D_GITHUB_ID
+/app/infra/                @SkyWith628
+/app/__main__.py           @SkyWith628
+/.github/                  @SkyWith628
+/pyproject.toml            @SkyWith628
