@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<body style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 720px; margin: auto; color: #222;">
+  <h1>📊 경쟁사 주간 리포트 {{ r.week }}</h1>
+  <p style="background:#f4f6f8; padding:12px; border-radius:8px;"><b>TL;DR</b> {{ r.tldr }}</p>
+
+  <h2>🔥 Top 5 변화</h2>
+  <ol>
+  {% for e in r.top_events %}
+    <li>[{{ brand_label[e.brand.value] }}] <a href="{{ e.url }}">{{ e.title }}</a>{% if e.llm_note %} — {{ e.llm_note }}{% endif %}</li>
+  {% endfor %}
+  </ol>
+
+  <h2>브랜드별 요약</h2>
+  {% for s in r.brand_summaries %}
+    <h3>{{ brand_label[s.brand.value] }}</h3>
+    <ul>{% for h in s.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+  {% endfor %}
+
+  <h2>💡 인사이트</h2>
+  <ul>{% for i in r.insights %}<li>{{ i }}</li>{% endfor %}</ul>
+
+  <h2>✅ 액션 제안</h2>
+  <ul>{% for a in r.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+</body>
+</html>

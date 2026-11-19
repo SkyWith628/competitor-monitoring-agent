@@ -1,0 +1,24 @@
+# 폴더별 담당자 — PR이 열리면 해당 담당자에게 리뷰 요청이 자동으로 간다.
+# 아래 TEAM_X_GITHUB_ID 를 팀원 GitHub 아이디(@ 포함)로 바꿔서 사용.
+
+# 공통 계약: 바꾸면 모두에게 영향 → 전원 리뷰
+/app/core/                 TEAM_A_GITHUB_ID TEAM_B_GITHUB_ID TEAM_C_GITHUB_ID TEAM_D_GITHUB_ID
+
+# A — 사이트 수집 & 변화 감지
+/app/site_monitor/         TEAM_A_GITHUB_ID
+/tests/site_monitor/       TEAM_A_GITHUB_ID
+
+# B — 뉴스·SNS 수집
+/app/media_monitor/        TEAM_B_GITHUB_ID
+/config/brands.yaml        TEAM_B_GITHUB_ID TEAM_A_GITHUB_ID
+/tests/media_monitor/      TEAM_B_GITHUB_ID
+
+# C — LLM 분석 & 리포트 콘텐츠
+/app/analysis/             TEAM_C_GITHUB_ID
+/tests/analysis/           TEAM_C_GITHUB_ID
+
+# D — 플랫폼·알림·통합
+/app/infra/                TEAM_D_GITHUB_ID
+/app/__main__.py           TEAM_D_GITHUB_ID
+/.github/                  TEAM_D_GITHUB_ID
+/pyproject.toml            TEAM_D_GITHUB_ID

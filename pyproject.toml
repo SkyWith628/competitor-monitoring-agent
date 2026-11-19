@@ -1,0 +1,41 @@
+[project]
+name = "competitor-monitor"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2",
+    "pyyaml",
+    "python-dotenv",
+    "typer",
+    "httpx",
+    "selectolax",
+    "playwright",
+    "feedparser",
+    "rapidfuzz",
+    "anthropic",
+    "jinja2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "pre-commit"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.j2", "*.jsonl"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# typer.Option() 기본값은 typer 표준 사용법, 브랜드 하나 실패해도 나머지는 계속 수집
+"app/__main__.py" = ["B008", "BLE001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

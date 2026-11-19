@@ -1,0 +1,22 @@
+name: weekly-report
+on:
+  schedule:
+    - cron: "0 23 * * 0"   # 매주 월 08:00 KST (일 UTC 23:00)
+  workflow_dispatch:
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SLACK_WEBHOOK_REPORT: ${{ secrets.SLACK_WEBHOOK_REPORT }}
+      SLACK_WEBHOOK_OPS: ${{ secrets.SLACK_WEBHOOK_OPS }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - run: python -m app report
