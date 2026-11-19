@@ -31,7 +31,7 @@ tests/<역할 폴더>/    각자 자기 폴더 테스트
 - `app/core/` 변경 = 4명 전원 승인 (데이터 계약이 바뀌므로)
 - DB는 직접 만지지 않고 `app/infra/storage/repo.py` 함수만 호출
 - 브랜치: `feat/<폴더>-<내용>` (예: `feat/site_monitor-uniqlo`), PR 리뷰 짝 A↔B, C↔D
-- `.github/CODEOWNERS`의 `TEAM_X_GITHUB_ID`를 실제 아이디로 바꾸면 PR 리뷰어가 자동 지정됨
+- `.github/CODEOWNERS`에 역할별 담당자가 지정돼 있어 PR을 열면 리뷰어가 자동 지정됨
 
 ## 시작하기
 ```powershell
