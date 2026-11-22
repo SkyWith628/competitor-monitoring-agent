@@ -3,20 +3,42 @@ on:
   schedule:
     - cron: "0 23 * * 0"   # 매주 월 08:00 KST (일 UTC 23:00)
   workflow_dispatch:
+concurrency:               # 같은 주 리포트가 두 번 동시에 발송되지 않게
+  group: weekly-report
+  cancel-in-progress: false
 jobs:
   report:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       SLACK_WEBHOOK_REPORT: ${{ secrets.SLACK_WEBHOOK_REPORT }}
       SLACK_WEBHOOK_OPS: ${{ secrets.SLACK_WEBHOOK_OPS }}
+      SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}   # 선택: 저장소 Variables 에 없으면 기본값
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       MAIL_TO: ${{ secrets.MAIL_TO }}
+      REPORT_URL: ${{ vars.REPORT_URL || secrets.REPORT_URL }}   # 슬랙 "전체 리포트 보기" 링크 (선택)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -e .
-      - run: python -m app report
+      - id: install
+        run: pip install -e .
+      - name: report
+        run: python -m app report
+      - name: dashboard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}   # 발송이 실패해도 대시보드는 만든다
+        run: python -m app dashboard
+      - name: upload report & dashboard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-report-${{ github.run_id }}
+          path: |
+            data/report-*.html
+            data/report-*.md
+            data/dashboard.html
+          if-no-files-found: warn
