@@ -13,6 +13,14 @@ def _korean_time(monkeypatch):
     monkeypatch.delenv("REQUIRE_DATABASE_URL", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """슬랙 재시도 사이의 대기를 없앤다. 테스트가 실제로 몇 초씩 기다리지 않게."""
+    from app.infra.notify import slack
+
+    monkeypatch.setattr(slack, "_sleep", lambda seconds: None, raising=False)
+
+
 @pytest.fixture
 def tmp_db(tmp_path, monkeypatch):
     """테스트마다 빈 DB를 쓴다. 기본은 임시 SQLite 파일.

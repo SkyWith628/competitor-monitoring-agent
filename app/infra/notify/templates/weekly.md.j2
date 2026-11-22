@@ -1,14 +1,21 @@
+{#
+  주간 리포트 Markdown. render.to_markdown() 이 그린다 (메일의 text 파트, data/report-<주차>.md 파일).
+  weekly.html.j2 와 같은 변수(render._context)를 쓰고 같은 순서·같은 문구를 유지한다 — 한쪽을 고치면 다른 쪽도 고칠 것.
+  자동 이스케이프가 꺼져 있으므로 표 칸·링크 글자에는 md 필터를 써서 `|`, `[`, `]` 를 이스케이프한다.
+  빈 줄이 문법의 일부라(목록·표 앞뒤) 빈 줄을 함부로 지우지 말 것.
+#}
 # 📊 경쟁사 주간 리포트 {{ r.week }}
 
-> **TL;DR** {{ r.tldr }}
+> **TL;DR** {{ tldr or empty_tldr }}
 
+{# Top 5: http(s) 가 아닌 주소(safe_url 결과가 "#")는 링크 없이 제목만 쓴다 #}
 ## 🔥 Top 5 변화
 
 {% for e in r.top_events %}
 {{ loop.index }}. [{{ brand_label.get(e.brand.value, e.brand.value) }}] {% if (e.url | safe_url) != "#" %}[{{ e.title | md }}]({{ e.url | safe_url }}){% else %}{{ e.title | md }}{% endif %}{% if e.llm_note %} — {{ e.llm_note }}{% endif %}
 
 {% else %}
-이번 주 감지된 주요 변화가 없습니다.
+{{ empty_events }}
 {% endfor %}
 
 ## 브랜드별 요약
@@ -40,6 +47,7 @@
 - (없음)
 {% endfor %}
 
+{# 수치 표: 여기서는 폭 제약이 없어 브랜드 전체 이름(stats.columns)과 "값 (증감)" 한 덩어리(c.text)를 쓴다 #}
 ## 부록: 수치 표
 
 {% if stats.rows %}
