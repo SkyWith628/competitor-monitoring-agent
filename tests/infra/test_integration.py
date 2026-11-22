@@ -139,6 +139,10 @@ def test_daily_then_weekly_flow(world, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     page = (tmp_path / "data" / "dashboard.html").read_text(encoding="utf-8")
     assert "스파오가 가격을 내렸다" in page and "히트텍 &lt;신상&gt; 할인" in page
+    assert "운영 상태" in page and "spao.com" in page and "운영 상태 정보 없음" not in page  # 실제 DB 값으로 채워짐
+    result = runner.invoke(cli, ["status", "--strict"])
+    assert result.exit_code == 0, result.output
+    assert "정상  스파오 · spao.com" in result.output and f"{week}  발송 완료" in result.output
     result = runner.invoke(cli, ["prune"])
     assert result.exit_code == 0 and "0건 삭제" in result.output
 
@@ -152,6 +156,10 @@ def test_report_survives_one_channel_failing(world, monkeypatch):
     assert any("발송 실패" in body["text"] for url, body in world if url.endswith("/ops"))
     with db.connect() as conn:  # 발송된 것으로 기록된다
         assert conn.execute("SELECT sent_at FROM reports").fetchone()[0] is not None
+    # 한 채널만 나간 주차는 status 와 대시보드 양쪽에서 "일부 발송"으로 보인다
+    assert "2026-W47  일부 발송 (미발송: email)" in runner.invoke(cli, ["status"]).output
+    assert runner.invoke(cli, ["dashboard"]).exit_code == 0
+    assert "일부 발송" in (config.ROOT / "data" / "dashboard.html").read_text(encoding="utf-8")
 
 
 def test_report_rerun_does_not_resend_or_rewrite(world, monkeypatch):
