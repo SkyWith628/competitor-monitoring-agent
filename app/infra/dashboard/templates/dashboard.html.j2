@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경쟁사 모니터링 대시보드</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --wash: #f0efec;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
+    --link: #1c5cab;
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --wash: #2c2c2a;
+      --ink: #f0efec; --ink-2: #c3c2b7; --muted: #979590;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+      --link: #86b6ef;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    word-break: keep-all; overflow-wrap: anywhere;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 16px 48px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 22px; line-height: 1.3; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0; }
+  h3 { font-size: 15px; margin: 0; }
+  p { margin: 0; }
+  a { color: var(--link); text-underline-offset: 2px; }
+  .sub { color: var(--ink-2); font-size: 13px; }
+  .num { font-variant-numeric: tabular-nums; }
+  section { margin-top: 28px; }
+  .section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 20px 0; text-align: center; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .s1 { background: var(--series-1); fill: var(--series-1); }
+  .s2 { background: var(--series-2); fill: var(--series-2); }
+  .s3 { background: var(--series-3); fill: var(--series-3); }
+  .s4 { background: var(--series-4); fill: var(--series-4); }
+
+  /* 브랜드 카드 */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .card h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat-label { color: var(--ink-2); font-size: 12px; }
+  .stat-value { font-size: 26px; font-weight: 600; line-height: 1.2; }
+  .breakdown { list-style: none; margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--grid);
+               display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); }
+  .breakdown b { color: var(--ink); font-weight: 600; }
+  .breakdown-title { width: 100%; font-size: 12px; color: var(--muted); }
+
+  /* 추이 차트 */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 12px; padding: 0; list-style: none;
+            font-size: 13px; color: var(--ink-2); }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .legend b { color: var(--ink); font-weight: 600; }
+  .chart { position: relative; display: flex; gap: 6px; }
+  .yaxis { position: relative; flex: none; width: 26px; font-size: 11px; color: var(--muted); }
+  .yaxis span { position: absolute; right: 0; transform: translateY(-50%); }
+  .plot { flex: 1; min-width: 0; display: block; overflow: visible; }
+  .plot .grid { stroke: var(--grid); stroke-width: 1; }
+  .plot .base { stroke: var(--axis); stroke-width: 1; }
+  .plot text { fill: var(--muted); font-size: 11px; text-anchor: middle; }
+  .plot .hit { fill: transparent; }
+  .plot .hit:hover, .plot .hit.on { fill: var(--ink); fill-opacity: 0.06; }
+  .tip { position: absolute; z-index: 1; display: none; pointer-events: none; min-width: 132px;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); font-size: 12px; color: var(--ink-2); }
+  .tip-day { color: var(--ink); font-weight: 600; margin-bottom: 4px; }
+  .tip-row { display: flex; align-items: center; gap: 6px; }
+  .tip-row .key { width: 10px; height: 3px; border-radius: 2px; flex: none; }
+  .tip-row b { color: var(--ink); margin-left: auto; padding-left: 12px; }
+
+  details > summary { cursor: pointer; color: var(--ink-2); font-size: 13px; width: fit-content; }
+  details > summary:hover { color: var(--ink); }
+  .table-view { margin-top: 12px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 500; font-size: 12px; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; white-space: normal; }
+  @media (max-width: 480px) { th, td { padding: 7px 5px; font-size: 12px; } }
+  th:last-child, td:last-child { padding-right: 0; }
+  tr:last-child > td { border-bottom: 0; }
+  tfoot td { font-weight: 600; border-top: 1px solid var(--axis); }
+  .table-view table { margin-top: 8px; }
+
+  /* 주요 이벤트 */
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows > li { padding: 12px 0; border-bottom: 1px solid var(--grid); }
+  .rows > li:first-child { padding-top: 0; }
+  .rows > li:last-child { padding-bottom: 0; border-bottom: 0; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2);
+          margin-bottom: 4px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--wash);
+           color: var(--ink); white-space: nowrap; }
+  .badge.top { background: var(--ink); color: var(--surface); font-weight: 600; }
+  .meta .date { margin-left: auto; color: var(--muted); }
+  .event-title { font-weight: 600; }
+  .note { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+
+  /* 주간 리포트 */
+  .report-week { font-weight: 600; margin-bottom: 2px; }
+  .report details { margin-top: 8px; }
+  .report h4 { font-size: 13px; margin: 10px 0 2px; color: var(--ink-2); font-weight: 600; }
+  .report ul { margin: 0; padding-left: 18px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>경쟁사 모니터링 대시보드</h1>
+    <p class="sub">생성 시각 {{ generated_at }} · 최근 {{ window_days }}일 이벤트
+      <span class="num">{{ trend.total | num }}</span>건 · 수집 항목 <span class="num">{{ items_total | num }}</span>건</p>
+  </header>
+
+  <section aria-labelledby="h-brands">
+    <div class="section-head">
+      <h2 id="h-brands">브랜드별 현황</h2>
+      <span class="sub">수집 항목은 전체 누적, 이벤트는 최근 {{ window_days }}일</span>
+    </div>
+    <div class="cards">
+      {% for c in cards %}
+      <article class="panel card">
+        <h3><span class="swatch s{{ c.series }}"></span>{{ c.label }}</h3>
+        <div class="stats">
+          <div><div class="stat-label">수집 항목</div><div class="stat-value">{{ c.items_total | num }}</div></div>
+          <div><div class="stat-label">이벤트</div><div class="stat-value">{{ c.events_total | num }}</div></div>
+        </div>
+        <ul class="breakdown">
+          <li class="breakdown-title">수집 소스</li>
+          {% for label, n in c.sources %}<li>{{ label }} <b class="num">{{ n | num }}</b></li>{% endfor %}
+        </ul>
+        <ul class="breakdown">
+          <li class="breakdown-title">변화 유형</li>
+          {% for label, n in c.changes %}<li>{{ label }} <b class="num">{{ n | num }}</b></li>
+          {% else %}<li>감지된 변화 없음</li>{% endfor %}
+        </ul>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="h-trend">
+    <div class="section-head">
+      <h2 id="h-trend">일별 이벤트 추이</h2>
+      <span class="sub">{{ trend.start }} ~ {{ trend.end }} · 브랜드별 누적</span>
+    </div>
+    <div class="panel">
+      {% if trend.total %}
+      <ul class="legend">
+        {% for b in brands %}<li><span class="swatch s{{ b.series }}"></span>{{ b.label }} <b class="num">{{ b.events | num }}</b></li>{% endfor %}
+      </ul>
+      <div class="chart" id="trend-chart">
+        <div class="yaxis" aria-hidden="true">
+          {% for t in trend.ticks %}<span class="num" style="top: {{ t.y }}px">{{ t.value | num }}</span>{% endfor %}
+        </div>
+        <svg class="plot" width="100%" height="{{ trend.plot_h + 22 }}" role="img"
+             aria-label="최근 {{ window_days }}일 일별 이벤트 수, 브랜드별 누적 막대. 수치는 아래 표로 보기 참고.">
+          {% for t in trend.ticks %}{% if t.value %}
+          <line class="grid" x1="0" x2="100%" y1="{{ t.y }}" y2="{{ t.y }}"/>
+          {% endif %}{% endfor %}
+          {% for col in trend.columns %}
+          {% for s in col.segments %}
+          {% if s.top %}
+          <svg x="{{ col.bar_x }}%" y="{{ s.y }}" width="{{ col.bar_w }}%" height="{{ s.h }}"><rect class="s{{ s.series }}" width="100%" height="{{ s.h + 6 }}" rx="3"/></svg>
+          {% else %}
+          <rect class="s{{ s.series }}" x="{{ col.bar_x }}%" y="{{ s.y }}" width="{{ col.bar_w }}%" height="{{ s.h }}"/>
+          {% endif %}
+          {% endfor %}
+          {% if col.tick %}<text x="{{ col.center }}%" y="{{ trend.plot_h + 16 }}">{{ col.label }}</text>{% endif %}
+          {% endfor %}
+          <line class="base" x1="0" x2="100%" y1="{{ trend.plot_h }}" y2="{{ trend.plot_h }}"/>
+          {% for col in trend.columns %}
+          <rect class="hit" x="{{ col.slot_x }}%" y="0" width="{{ col.slot_w }}%" height="{{ trend.plot_h }}"
+                data-day="{{ col.iso }}" data-counts="{{ col.counts | join(',') }}" data-total="{{ col.total }}"/>
+          {% endfor %}
+        </svg>
+        <div class="tip" id="trend-tip" role="status"></div>
+      </div>
+      <details class="table-view">
+        <summary>표로 보기</summary>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>일자</th>{% for b in brands %}<th>{{ b.label }}</th>{% endfor %}<th>합계</th></tr></thead>
+            <tbody>
+              {% for col in trend.columns | reverse %}{% if col.total %}
+              <tr><td class="num">{{ col.iso }}</td>{% for v in col.counts %}<td class="num">{{ v | num }}</td>{% endfor %}<td class="num">{{ col.total | num }}</td></tr>
+              {% endif %}{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% else %}
+      <p class="empty">최근 {{ window_days }}일 동안 감지된 이벤트가 없습니다.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section aria-labelledby="h-events">
+    <div class="section-head">
+      <h2 id="h-events">주요 이벤트</h2>
+      <span class="sub">중요도 {{ high_importance }} 이상 · 최신순</span>
+    </div>
+    <div class="panel">
+      {% if high_events %}
+      <ul class="rows">
+        {% for e in high_events %}
+        <li>
+          <div class="meta">
+            <span class="badge{% if e.importance >= 5 %} top{% endif %}">중요도 {{ e.importance }}</span>
+            {% if e.category %}<span class="badge">{{ e.category }}</span>{% endif %}
+            <span>{{ e.brand }} · {{ e.change }}</span>
+            <span class="date num">{{ e.date }}</span>
+          </div>
+          <div class="event-title">{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener noreferrer">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}</div>
+          {% if e.note %}<p class="note">{{ e.note }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">중요도 {{ high_importance }} 이상으로 분류된 이벤트가 아직 없습니다.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section aria-labelledby="h-reports">
+    <div class="section-head">
+      <h2 id="h-reports">주간 리포트</h2>
+      <span class="sub">최근 발행 순</span>
+    </div>
+    <div class="panel">
+      {% if reports %}
+      <ul class="rows">
+        {% for r in reports %}
+        <li class="report">
+          <div class="report-week">{{ r.week }}</div>
+          <p>{{ r.tldr }}</p>
+          {% if r.insights or r.actions %}
+          <details>
+            <summary>인사이트 {{ r.insights | length }}건 · 액션 제안 {{ r.actions | length }}건</summary>
+            {% if r.insights %}<h4>인사이트</h4><ul>{% for i in r.insights %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+            {% if r.actions %}<h4>액션 제안</h4><ul>{% for a in r.actions %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+          </details>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty">아직 저장된 주간 리포트가 없습니다.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section aria-labelledby="h-usage">
+    <div class="section-head">
+      <h2 id="h-usage">LLM 사용량</h2>
+      <span class="sub">최근 {{ window_days }}일</span>
+    </div>
+    <div class="panel">
+      {% if usage %}
+      <div class="scroll">
+        <table>
+          <thead><tr><th>모델</th><th>호출</th><th>입력 토큰</th><th>출력 토큰</th></tr></thead>
+          <tbody>
+            {% for u in usage %}
+            <tr><td>{{ u.model }}</td><td class="num">{{ u.calls | num }}</td><td class="num">{{ u.input_tokens | num }}</td><td class="num">{{ u.output_tokens | num }}</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if usage | length > 1 %}
+          <tfoot><tr><td>합계</td><td class="num">{{ usage_total.calls | num }}</td><td class="num">{{ usage_total.input_tokens | num }}</td><td class="num">{{ usage_total.output_tokens | num }}</td></tr></tfoot>
+          {% endif %}
+        </table>
+      </div>
+      {% else %}
+      <p class="empty">최근 {{ window_days }}일 동안 기록된 LLM 호출이 없습니다.</p>
+      {% endif %}
+    </div>
+  </section>
+</main>
+<script>
+// 추이 차트 툴팁. 값은 data-* 속성에서 읽어 textContent로만 넣는다.
+(function () {
+  var chart = document.getElementById("trend-chart"), tip = document.getElementById("trend-tip");
+  if (!chart || !tip) return;
+  var names = {{ brands | map(attribute="label") | list | tojson }};
+  var active = null;
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function hide() {
+    if (active) active.classList.remove("on");
+    active = null;
+    tip.style.display = "none";
+  }
+  function show(hit, ev) {
+    if (hit !== active) {
+      if (active) active.classList.remove("on");
+      active = hit;
+      hit.classList.add("on");
+      tip.textContent = "";
+      tip.appendChild(el("div", "tip-day", hit.dataset.day + " · " + hit.dataset.total + "건"));
+      hit.dataset.counts.split(",").forEach(function (v, i) {
+        var row = el("div", "tip-row");
+        row.appendChild(el("span", "key s" + (i + 1)));
+        row.appendChild(el("span", "", names[i]));
+        row.appendChild(el("b", "", v));
+        tip.appendChild(row);
+      });
+    }
+    tip.style.display = "block";
+    var box = chart.getBoundingClientRect();
+    var x = ev.clientX - box.left + 14, y = ev.clientY - box.top + 14;
+    if (x + tip.offsetWidth > box.width) x = ev.clientX - box.left - tip.offsetWidth - 14;
+    tip.style.left = Math.max(0, x) + "px";
+    tip.style.top = Math.max(0, Math.min(y, box.height - tip.offsetHeight)) + "px";
+  }
+  chart.addEventListener("pointermove", function (ev) {
+    var hit = ev.target.closest ? ev.target.closest(".hit") : null;
+    if (hit) show(hit, ev); else hide();
+  });
+  chart.addEventListener("pointerdown", function (ev) {
+    var hit = ev.target.closest ? ev.target.closest(".hit") : null;
+    if (hit) show(hit, ev);
+  });
+  chart.addEventListener("pointerleave", hide);
+})();
+</script>
+</body>
+</html>

@@ -72,7 +72,7 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
     brands = [brand] if brand else list(Brand)
     failed: list[str] = []
     for b in brands:
-        since = datetime.now()  # noqa: DTZ005 — collected_at 과 같은 기준(naive 로컬 시각)
+        since = datetime.now()  # collected_at 과 같은 기준(naive 로컬 시각)
         try:
             if source == "site":
                 from app.site_monitor.pipeline import run

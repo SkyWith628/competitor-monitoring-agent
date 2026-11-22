@@ -84,13 +84,13 @@ def test_collect_site_alerts_when_zero_items(monkeypatch, alerts, counts):
 
     monkeypatch.setattr(pipeline, "run", lambda brand: [])
     counts.by_brand[Brand.SPAO] = 0
-    started = datetime.now()  # noqa: DTZ005
+    started = datetime.now()
     result = runner.invoke(cli, ["collect", "--source", "site"])
     assert result.exit_code == 0, result.output  # 0건은 경고일 뿐 실패가 아니다
     assert len(alerts) == 1 and "파싱 0건" in alerts[0] and "site/spao" in alerts[0]
     _, source_types, since = counts.calls[0]
     assert source_types == [SourceType.SITE_PRODUCT, SourceType.SITE_PAGE]
-    assert since.tzinfo is None and started <= since <= datetime.now()  # noqa: DTZ005 — 실행 직전의 naive 시각
+    assert since.tzinfo is None and started <= since <= datetime.now()  # 실행 직전의 naive 시각
 
 
 def test_collect_sns_checks_sns_posts(monkeypatch, alerts, counts):
