@@ -3,20 +3,31 @@ on:
   schedule:
     - cron: "0 23 * * 0"   # 매주 월 08:00 KST (일 UTC 23:00)
   workflow_dispatch:
+concurrency:               # daily 와 같은 그룹: 늦게 끝나는 daily(수집·분류)를 기다렸다가 리포트를 만든다
+  group: monitor-pipeline
+  cancel-in-progress: false
 jobs:
   report:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       SLACK_WEBHOOK_REPORT: ${{ secrets.SLACK_WEBHOOK_REPORT }}
       SLACK_WEBHOOK_OPS: ${{ secrets.SLACK_WEBHOOK_OPS }}
+      SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}   # 선택: 저장소 Variables 에 없으면 기본값
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       MAIL_TO: ${{ secrets.MAIL_TO }}
+      REPORT_URL: ${{ vars.REPORT_URL || secrets.REPORT_URL }}   # 슬랙 "전체 리포트 보기" 링크 (선택)
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REQUIRE_DATABASE_URL: "1"   # DATABASE_URL 이 비어 있으면 임시 SQLite 로 내려가지 않고 실패한다
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -e .
-      - run: python -m app report
+      - id: install
+        run: pip install -e . -c constraints.txt
+      - name: report
+        run: python -m app report
+      # 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다: 이 저장소는 공개라서 누구나 내려받을 수 있다.

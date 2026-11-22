@@ -20,5 +20,6 @@
 # D — 플랫폼·알림·통합
 /app/infra/                @SkyWith628
 /app/__main__.py           @SkyWith628
+/tests/infra/              @SkyWith628
 /.github/                  @SkyWith628
 /pyproject.toml            @SkyWith628
