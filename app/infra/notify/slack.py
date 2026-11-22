@@ -29,7 +29,7 @@ def describe_error(e: BaseException) -> str:
 
 
 def send_blocks(blocks: list[dict], fallback_text: str, webhook_env: str = "SLACK_WEBHOOK_REPORT") -> None:
-    url = env(webhook_env)
+    url = (env(webhook_env) or "").strip()
     if not url:
         raise RuntimeError(f"{webhook_env} 가 .env 에 없습니다")
     httpx.post(url, json={"text": fallback_text, "blocks": blocks}, timeout=10).raise_for_status()
@@ -67,11 +67,15 @@ def send_urgent(events: list[ChangeEvent]) -> list[ChangeEvent]:
 
 
 def send_ops_alert(message: str) -> None:
-    """수집 실패·0건·LLM 오류 등 운영 경고 → #monitor-ops"""
-    url = env("SLACK_WEBHOOK_OPS")
+    """수집 실패·0건·LLM 오류 등 운영 경고 → #monitor-ops
+
+    경고 발송이 실패해도 본 작업을 멈추지 않는다. 어떤 예외도 밖으로 내보내지 않고(잘못된 웹훅 주소
+    포함) stderr에만 남긴다. 슬랙이 4xx·5xx로 거절한 경우도 실패로 기록한다.
+    """
+    url = (env("SLACK_WEBHOOK_OPS") or "").strip()  # Secret 끝에 줄바꿈이 섞여 들어오는 경우가 있다
     if not url:
         return
     try:
-        httpx.post(url, json={"text": f":warning: {message}"}, timeout=10)
-    except httpx.HTTPError as e:  # 경고 발송 실패가 본 작업을 멈추면 안 된다
+        httpx.post(url, json={"text": f":warning: {message}"}, timeout=10).raise_for_status()
+    except Exception as e:  # noqa: BLE001 — 경고 발송 실패가 본 작업을 멈추면 안 된다
         print(f"운영 경고 발송 실패: {describe_error(e)}", file=sys.stderr)

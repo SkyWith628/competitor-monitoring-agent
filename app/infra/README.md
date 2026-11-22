@@ -76,6 +76,8 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 - **daily-collect** (매일 06:00 KST): site → news → sns 수집 → 분류 → 스냅샷 정리. 한 단계가 실패해도 다음 단계는 실행된다.
 - **weekly-report** (매주 월 08:00 KST): 리포트를 슬랙·메일로 발송한다. 저장소가 공개라서 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다. 대시보드는 `DATABASE_URL`을 넣고 로컬에서 `python -m app dashboard`로 만든다.
 - 둘 다 Actions 탭에서 **Run workflow**로 수동 실행할 수 있다.
+- 두 워크플로는 `REQUIRE_DATABASE_URL=1`로 돈다. `DATABASE_URL` Secret이 없으면 임시 SQLite로 내려가지 않고 바로 실패하며 운영 경고를 보낸다.
+- CLI는 실행할 때 시간대를 한국 시간으로 고정한다. 러너(UTC)에서 돌아도 수집·감지 시각과 주차 경계는 한국 시간 기준이다. (Windows는 PC의 시간대 설정을 따른다)
 
 ## 로컬에서 PostgreSQL로 테스트
 

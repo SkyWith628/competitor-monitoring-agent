@@ -88,6 +88,11 @@ def database_url() -> str:
     """지금 설정에서 쓸 SQLAlchemy URL. 호출할 때마다 환경변수·DB_PATH를 다시 읽는다."""
     url = (os.getenv("DATABASE_URL") or "").strip()
     if not url:
+        if (os.getenv("REQUIRE_DATABASE_URL") or "").strip() not in ("", "0", "false"):
+            # GitHub Actions 러너의 디스크는 실행이 끝나면 사라진다. 조용히 SQLite로 내려가면 매일 빈 DB에서
+            # 시작해 전 상품이 "신상품"으로 잡히고 주간 리포트가 비므로, 운영 워크플로에서는 멈춘다.
+            raise RuntimeError("DATABASE_URL 이 비어 있습니다 (REQUIRE_DATABASE_URL 설정됨). "
+                               "GitHub Secrets 에 운영 DB 주소를 등록하세요")
         return f"sqlite:///{Path(DB_PATH).resolve()}"
     # Heroku·Supabase·Neon 등이 주는 postgres:// / postgresql:// 를 psycopg3 드라이버로 맞춘다
     for prefix in ("postgres://", "postgresql://"):
@@ -109,7 +114,9 @@ def engine() -> Engine:
             Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
             eng = create_engine(url, poolclass=NullPool)  # 파일을 붙잡고 있지 않도록 매번 닫는다
         else:
-            eng = create_engine(url, pool_pre_ping=True)
+            # prepare_threshold=None: 서버 쪽 prepared statement 를 쓰지 않는다. Supabase·Neon 의
+            # 트랜잭션 풀러(pgbouncer)는 연결을 요청마다 바꿔 줘서 prepared statement 가 깨진다.
+            eng = create_engine(url, pool_pre_ping=True, connect_args={"prepare_threshold": None})
         _engines[url] = eng
     if url not in _initialized:
         metadata.create_all(eng)  # 이미 있는 테이블은 건드리지 않는다 (기존 SQLite 파일 그대로 사용)

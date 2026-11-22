@@ -206,3 +206,14 @@ def test_pending_urgent_excludes_sent_and_lower_importance(tmp_db):
     repo.mark_urgent_sent([1])
     repo.mark_urgent_sent([1])
     assert [e.id for e in repo.pending_urgent()] == [3]
+
+
+def test_events_stamped_on_monday_morning_kst_belong_to_the_new_week(tmp_db):
+    """월요일 06:00 KST 수집분(= 일요일 21:00 UTC)이 전주 리포트로 들어가면 안 된다."""
+    from zoneinfo import ZoneInfo
+
+    monday_6am_kst = datetime(2026, 11, 23, 6, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+    stamped = monday_6am_kst.astimezone().replace(tzinfo=None)  # 모델이 datetime.now() 로 찍는 값
+    repo.save_events([_event(1, detected_at=stamped)])
+    assert repo.events_of_week("2026-W47") == []
+    assert len(repo.events_of_week("2026-W48")) == 1

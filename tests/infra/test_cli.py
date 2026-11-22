@@ -458,3 +458,27 @@ def test_dashboard_prints_output_path(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["dashboard"])
     assert result.exit_code == 0, result.output
     assert "dashboard.html" in result.output.replace("\n", "")
+
+
+# ---------- 공통 준비: 한국 시간, 운영 DB 필수 ----------
+def test_cli_runs_in_korean_time_even_on_utc_runner(monkeypatch):
+    import time
+    from datetime import timedelta
+
+    monkeypatch.setenv("TZ", "UTC")  # GitHub Actions 러너
+    time.tzset()
+    assert runner.invoke(cli, ["prune", "--help"]).exit_code == 0  # --help 는 콜백 전에 끝난다
+    monkeypatch.setattr(repo, "prune_snapshots", lambda weeks=8: 0)
+    assert runner.invoke(cli, ["prune"]).exit_code == 0
+    assert datetime.now().astimezone().utcoffset() == timedelta(hours=9)
+
+
+def test_cli_refuses_to_fall_back_to_sqlite_when_database_required(monkeypatch, alerts):
+    monkeypatch.setenv("REQUIRE_DATABASE_URL", "1")
+    monkeypatch.setenv("DATABASE_URL", "")  # Secret 을 등록하지 않으면 Actions 는 빈 문자열을 넘긴다
+    called = []
+    monkeypatch.setattr(repo, "prune_snapshots", lambda weeks=8: called.append(weeks) or 0)
+    result = runner.invoke(cli, ["prune"])
+    assert result.exit_code == 1 and called == []
+    assert "DATABASE_URL" in result.output
+    assert len(alerts) == 1 and "실행 중단" in alerts[0]

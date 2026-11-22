@@ -2,7 +2,15 @@ import os
 
 import pytest
 
+from app.__main__ import use_korean_time
 from app.infra.storage import db
+
+
+@pytest.fixture(autouse=True)
+def _korean_time(monkeypatch):
+    """CLI가 실행 때 맞추는 것과 같은 시간대에서 테스트한다. 운영 워크플로 전용 설정은 끈다."""
+    use_korean_time()
+    monkeypatch.delenv("REQUIRE_DATABASE_URL", raising=False)
 
 
 @pytest.fixture

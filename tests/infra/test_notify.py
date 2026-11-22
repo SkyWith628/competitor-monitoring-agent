@@ -258,3 +258,24 @@ def test_urgent_failure_log_has_no_webhook_url(monkeypatch, capsys):
     assert slack.send_urgent([_event()]) == []
     err = capsys.readouterr().err
     assert "HTTP 404" in err and "SECRETTOKEN" not in err and "hooks.slack.com" not in err
+
+
+def test_send_ops_alert_survives_malformed_webhook_url(monkeypatch, capsys):
+    monkeypatch.setenv("SLACK_WEBHOOK_OPS", "https://hooks.slack.test/ops\n")  # Secret 끝의 줄바꿈
+    seen = []
+    monkeypatch.setattr(httpx, "post", lambda url, **kw: seen.append(url) or _Resp())
+    slack.send_ops_alert("수집 0건")
+    assert seen == ["https://hooks.slack.test/ops"]
+
+    def invalid(url, **kw):
+        raise httpx.InvalidURL("Invalid non-printable ASCII character in URL")  # HTTPError 의 하위가 아니다
+
+    monkeypatch.setattr(httpx, "post", invalid)
+    slack.send_ops_alert("수집 0건")  # 예외가 밖으로 나오지 않는다
+    assert "운영 경고 발송 실패" in capsys.readouterr().err
+
+
+def test_send_ops_alert_logs_rejected_alert(posts, capsys):
+    posts.fail_on = {0}  # 슬랙이 500 으로 거절
+    slack.send_ops_alert("수집 0건")
+    assert "운영 경고 발송 실패" in capsys.readouterr().err

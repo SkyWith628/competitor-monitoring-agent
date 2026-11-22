@@ -2,13 +2,13 @@
 
 가짜로 바꾸는 것은 바깥 경계뿐: A의 수집 파이프라인, C의 LLM 호출, HTTP(httpx.post), SMTP.
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import httpx
 import pytest
 from typer.testing import CliRunner
 
-from app.__main__ import KST, cli, last_week
+from app.__main__ import KST, cli
 from app.core import config
 from app.core.models import (
     Brand,
@@ -76,7 +76,7 @@ def _site_pipeline(brand: Brand) -> list[ChangeEvent]:
                    url="https://spao.com/p1", title="히트텍 <신상>", price=29900)
     events = [ChangeEvent(brand=brand, change_type=ChangeType.PRICE_DOWN, title="히트텍 <신상> 할인",
                           url=item.url, detail={"before": 39900, "after": 29900},
-                          detected_at=datetime.now(KST).replace(tzinfo=None) - timedelta(days=7))]
+                          detected_at=datetime.now(KST).replace(tzinfo=None))]
     repo.save_items([item])
     repo.save_events(events)
     return events
@@ -121,8 +121,9 @@ def test_daily_then_weekly_flow(world, tmp_path, monkeypatch):
 
     # 주간 리포트: 슬랙(본문 + 브랜드 후속) + 메일, 파일 저장, 발송 기록
     posts.clear()
-    week = last_week()
-    result = runner.invoke(cli, ["report"])
+    y, w, _ = datetime.now(KST).isocalendar()
+    week = f"{y}-W{w:02d}"  # 방금 감지한 이벤트가 들어 있는 이번 주
+    result = runner.invoke(cli, ["report", "--week", week])
     assert result.exit_code == 0, result.output
     assert len(posts) == 2 and all(url.endswith("/report") for url, _ in posts)
     assert len(_SMTP.sent) == 1 and _SMTP.sent[0].is_multipart()
