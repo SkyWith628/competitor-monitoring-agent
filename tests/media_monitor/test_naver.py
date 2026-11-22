@@ -1,0 +1,41 @@
+"""[B] 네이버 뉴스 수집기 테스트 — 인터넷·API 키 없이 가짜 응답으로."""
+from app.core.models import Brand, SourceType
+from app.media_monitor.news.naver import NaverNewsCollector
+
+# 네이버 검색 API가 돌려주는 items 모양 그대로 (제목에 <b> 태그, &quot; 같은 HTML 문자 포함)
+FAKE = {
+    "스파오": [
+        {"title": "<b>스파오</b>, 겨울 &quot;웜테크&quot; 출시", "originallink": "https://mt.co.kr/1",
+         "link": "https://n.news.naver.com/1", "description": "<b>스파오</b>가 신상을 냈다",
+         "pubDate": "Wed, 18 Nov 2026 11:00:00 +0900"},
+        {"title": "<b>스파오</b> 인천 공장 화재", "originallink": "https://yna.co.kr/2",
+         "link": "https://n.news.naver.com/2", "description": "화재 소식",
+         "pubDate": "Wed, 18 Nov 2026 12:00:00 +0900"},
+    ],
+    "SPAO": [
+        # 위와 같은 기사 → 한 번만 들어가야 함
+        {"title": "<b>SPAO</b>, 겨울 &quot;웜테크&quot; 출시", "originallink": "https://mt.co.kr/1",
+         "link": "https://n.news.naver.com/1", "description": "",
+         "pubDate": "Wed, 18 Nov 2026 11:00:00 +0900"},
+    ],
+}
+
+
+def _collector(exclude=None):
+    c = NaverNewsCollector(Brand.SPAO, {"keywords": ["스파오", "SPAO"], "exclude": exclude or []})
+    c._fetch = lambda keyword: FAKE[keyword]  # 진짜 네이버 대신 가짜 응답
+    return c
+
+
+def test_cleans_html_and_skips_same_url():
+    items = _collector().collect()
+    assert len(items) == 2  # SPAO 검색의 같은 기사는 빠짐
+    assert items[0].title == '스파오, 겨울 "웜테크" 출시'  # <b> 태그·&quot; 정리됨
+    assert items[0].url == "https://mt.co.kr/1"  # 언론사 원문 주소
+    assert items[0].source_type == SourceType.NEWS
+    assert items[0].published_at.day == 18
+
+
+def test_exclude_keyword_filters_out():
+    items = _collector(exclude=["화재"]).collect()
+    assert [i.title for i in items] == ['스파오, 겨울 "웜테크" 출시']

@@ -1,8 +1,20 @@
 """네이버 검색 API(뉴스) 수집기."""
 from __future__ import annotations
 
+import hashlib
+import html
+import re
+from datetime import datetime
+from email.utils import parsedate_to_datetime
+
+import httpx
+
 from app.core.base_collector import BaseCollector
-from app.core.models import RawItem
+from app.core.config import env
+from app.core.models import RawItem, SourceType
+
+API_URL = "https://openapi.naver.com/v1/search/news.json"
+DISPLAY = 100  # 한 번에 받을 기사 수 (API 최대값)
 
 
 class NaverNewsCollector(BaseCollector):
@@ -10,5 +22,59 @@ class NaverNewsCollector(BaseCollector):
     request_interval_sec = 1.0
 
     def collect(self) -> list[RawItem]:
-        # TODO(B): keywords 로 검색 → exclude 키워드 필터 → RawItem(source_type=NEWS, external_id=url 해시)
-        raise NotImplementedError
+        exclude = self.config.get("exclude") or []
+        items: list[RawItem] = []
+        seen: set[str] = set()
+
+        # ① 키워드마다 한 번씩 검색 ("스파오" 검색, "SPAO" 검색)
+        for keyword in self.config["keywords"]:
+            for a in self._fetch(keyword):
+                url = a.get("originallink") or a["link"]  # 언론사 원문 주소 우선
+                # ② 두 키워드에 똑같이 걸린 기사는 한 번만
+                if url in seen:
+                    continue
+                seen.add(url)
+
+                title = _clean(a["title"])
+                body = _clean(a.get("description", ""))
+                # ③ 제외어가 제목이나 요약에 있으면 버리기
+                if any(word in title or word in body for word in exclude):
+                    continue
+
+                # ④ 팀 약속 양식(RawItem)에 옮겨 적기
+                items.append(RawItem(
+                    brand=self.brand,
+                    source_type=SourceType.NEWS,
+                    source=self.source,
+                    external_id=hashlib.sha1(url.encode()).hexdigest(),
+                    url=url,
+                    title=title,
+                    body=body or None,
+                    published_at=_to_datetime(a.get("pubDate")),
+                ))
+        return items
+
+    def _fetch(self, keyword: str) -> list[dict]:
+        """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
+        client_id, secret = env("NAVER_CLIENT_ID"), env("NAVER_CLIENT_SECRET")
+        if not client_id or not secret:
+            raise RuntimeError(".env 에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 채워야 합니다")
+        self.throttle()
+        r = httpx.get(API_URL,
+                      params={"query": keyword, "display": DISPLAY, "sort": "date"},
+                      headers={"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": secret},
+                      timeout=10)
+        r.raise_for_status()
+        return r.json()["items"]
+
+
+def _clean(text: str) -> str:
+    """'<b>스파오</b>, 신상 &quot;출시&quot;' → '스파오, 신상 "출시"'"""
+    return html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
+
+
+def _to_datetime(s: str | None) -> datetime | None:
+    """'Wed, 18 Nov 2026 11:00:00 +0900' → 로컬 시간 datetime (collected_at과 형식 맞춤)"""
+    if not s:
+        return None
+    return parsedate_to_datetime(s).astimezone().replace(tzinfo=None)
