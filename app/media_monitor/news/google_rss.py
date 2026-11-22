@@ -31,6 +31,7 @@ class GoogleNewsCollector(BaseCollector):
 
         # ② 구글 뉴스에서 기사 목록 받아오기
         feed = feedparser.parse(self._fetch(query))
+        keywords = [k.lower() for k in self.config["keywords"]]
         exclude = self.config.get("exclude") or []
 
         items: list[RawItem] = []
@@ -40,6 +41,10 @@ class GoogleNewsCollector(BaseCollector):
             if _is_non_news(source.get("href", "")):
                 continue
             title = _strip_press(e.title, source.get("title"))
+
+            # 제목에 브랜드명이 없는 기사(본문에서 스치듯 언급)는 버리기 — 4개 브랜드 모두 같은 기준
+            if not any(k in title.lower() for k in keywords):
+                continue
 
             # ④ 제외어가 들어간 기사는 버리기
             if any(word in title for word in exclude):
