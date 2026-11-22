@@ -175,7 +175,7 @@ def test_report_rerun_does_not_resend_or_rewrite(world, monkeypatch):
     assert [body for url, body in world if url.endswith("/report")] == slack_posts
     assert builds == ["2026-W47"] and len(_SMTP.sent) == 1
     assert "1번째로 만든 요약" in _SMTP.sent[0].get_body(("plain",)).get_content()
-    assert repo.report_channels_sent("2026-W47") == {"slack", "email"}
+    assert repo.report_channels_sent("2026-W47") >= {"slack", "email"}
 
     # 다 나간 뒤에는 다시 실행해도, dry-run 을 해도 발송 기록이 그대로다
     assert "이미 발송됨" in runner.invoke(cli, ["report", "--week", "2026-W47"]).output
@@ -208,6 +208,50 @@ def test_urgent_alert_is_retried_after_slack_outage(world, monkeypatch):
     assert repo.pending_urgent() == []
     world.clear()
     assert runner.invoke(cli, ["classify"]).exit_code == 0 and world == []  # 한 번만
+
+
+def test_slack_followup_failure_does_not_resend_main_message(world, monkeypatch):
+    """본 메시지는 나갔는데 브랜드별 후속 메시지에서 실패 → 재실행 때 후속 메시지만 나간다."""
+    monkeypatch.setattr("app.analysis.report_builder.build", _build)
+    calls = []
+
+    def flaky(url, json, **kw):
+        calls.append(url)
+        if url.endswith("/report") and len([u for u in calls if u.endswith("/report")]) == 2:
+            return httpx.Response(500, request=httpx.Request("POST", url))  # 두 번째 메시지(후속)만 실패
+        world.append((url, json))
+        return _Response()
+
+    monkeypatch.setattr(httpx, "post", flaky)
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 1
+    first = [body for url, body in world if url.endswith("/report")]
+    assert len(first) == 1 and len(_SMTP.sent) == 1  # 본 메시지와 메일은 나갔다
+
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0, result.output
+    report_posts = [body for url, body in world if url.endswith("/report")]
+    assert len(report_posts) == 2 and report_posts[0] == first[0]  # 후속 메시지 1건만 추가
+    assert "브랜드별 요약" in report_posts[1]["text"] and len(_SMTP.sent) == 1
+
+
+def test_workflows_share_one_concurrency_group_and_pin_dependencies():
+    """weekly 는 daily(수집·분류)가 끝난 뒤에 돌아야 하고, 설치는 검증된 버전으로 한다."""
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).parents[2]
+    daily, weekly = (yaml.safe_load((root / ".github" / "workflows" / f).read_text(encoding="utf-8"))
+                     for f in ("daily.yml", "weekly.yml"))
+    assert daily["concurrency"]["group"] == weekly["concurrency"]["group"]
+    assert not daily["concurrency"]["cancel-in-progress"] and not weekly["concurrency"]["cancel-in-progress"]
+    for workflow in (root / ".github" / "workflows").glob("*.yml"):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            if "pip install" in line:
+                assert "-c constraints.txt" in line, f"{workflow.name}: {line.strip()}"
+    pins = [line for line in (root / "constraints.txt").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")]
+    assert pins and all("==" in line for line in pins)
 
 
 def test_weekly_workflow_publishes_no_artifacts():

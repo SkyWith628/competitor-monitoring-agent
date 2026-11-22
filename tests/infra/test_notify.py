@@ -279,3 +279,17 @@ def test_send_ops_alert_logs_rejected_alert(posts, capsys):
     posts.fail_on = {0}  # 슬랙이 500 으로 거절
     slack.send_ops_alert("수집 0건")
     assert "운영 경고 발송 실패" in capsys.readouterr().err
+
+
+def test_send_report_reports_progress_and_can_resume(posts):
+    sent: list[int] = []
+    posts.fail_on = {1}  # 본 메시지는 성공, 첫 후속 메시지에서 실패
+    with pytest.raises(httpx.HTTPError):
+        slack.send_report(_report(), on_sent=sent.append)
+    assert sent == [0]
+
+    posts.fail_on = set()
+    before = len(posts)
+    slack.send_report(_report(), start=len(sent), on_sent=sent.append)
+    resumed = posts[before:]
+    assert sent[:2] == [0, 1] and all("브랜드별 요약" in p["json"]["text"] for p in resumed)  # 본 메시지 없음

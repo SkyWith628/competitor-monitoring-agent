@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Callable
 
 import httpx
 
@@ -35,15 +36,24 @@ def send_blocks(blocks: list[dict], fallback_text: str, webhook_env: str = "SLAC
     httpx.post(url, json={"text": fallback_text, "blocks": blocks}, timeout=10).raise_for_status()
 
 
-def send_report(report: WeeklyReport, full_report_url: str | None = None) -> None:
-    """주간 리포트 발송: 본 메시지 → 브랜드별 후속 메시지.
+def send_report(report: WeeklyReport, full_report_url: str | None = None, start: int = 0,
+                on_sent: Callable[[int], None] | None = None) -> None:
+    """주간 리포트 발송: 본 메시지(0번) → 브랜드별 후속 메시지(1번~).
 
     Incoming Webhook은 스레드 답글을 달 수 없어서, 후속 메시지는 같은 채널에 연달아 보낸다.
+    메시지가 하나 나갈 때마다 on_sent(번호)를 부른다. 중간에 실패해 다시 보낼 때는 이미 나간 개수를
+    start 로 넘기면 그 다음 메시지부터 보낸다(본 메시지 중복 방지).
     """
-    send_blocks(render.to_slack_blocks(report, full_report_url),
-                fallback_text=f"경쟁사 주간 리포트 {report.week}: {report.tldr}")
-    for blocks in render.to_slack_brand_blocks(report):
-        send_blocks(blocks, fallback_text=f"경쟁사 주간 리포트 {report.week} 브랜드별 요약")
+    messages = [(render.to_slack_blocks(report, full_report_url),
+                 f"경쟁사 주간 리포트 {report.week}: {report.tldr}")]
+    messages += [(blocks, f"경쟁사 주간 리포트 {report.week} 브랜드별 요약")
+                 for blocks in render.to_slack_brand_blocks(report)]
+    for i, (blocks, fallback) in enumerate(messages):
+        if i < start:
+            continue
+        send_blocks(blocks, fallback_text=fallback)
+        if on_sent:
+            on_sent(i)
 
 
 def send_urgent(events: list[ChangeEvent]) -> list[ChangeEvent]:

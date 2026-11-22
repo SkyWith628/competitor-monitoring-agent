@@ -105,6 +105,24 @@ def count_items_since(brand: Brand, source_types: list[SourceType], since: datet
         ).scalar_one()
 
 
+def silent_sources(brand: Brand, source_types: list[SourceType], since: datetime) -> list[str]:
+    """전에는 수집되던 소스인데 since 이후로는 한 건도 들어오지 않은 소스 이름들.
+
+    한 브랜드에 소스가 여럿이면(인스타그램·유튜브) 하나가 죽어도 합계는 0이 아니라서, 소스별로 따로 본다.
+    """
+    if not source_types:
+        return []
+    with connect() as conn:
+        rows = conn.execute(
+            select(raw_items.c.source, func.max(raw_items.c.collected_at)).where(
+                raw_items.c.brand == brand.value,
+                raw_items.c.source_type.in_([t.value for t in source_types]),
+            ).group_by(raw_items.c.source).order_by(raw_items.c.source)
+        ).fetchall()
+    cutoff = _naive_iso(since)
+    return [source for source, latest in rows if latest < cutoff]
+
+
 def item_counts() -> dict[str, dict[str, int]]:
     """브랜드 → source_type → raw_items 건수 (값은 enum의 value 문자열)."""
     with connect() as conn:

@@ -3,8 +3,8 @@ on:
   schedule:
     - cron: "0 23 * * 0"   # 매주 월 08:00 KST (일 UTC 23:00)
   workflow_dispatch:
-concurrency:               # 같은 주 리포트가 두 번 동시에 발송되지 않게
-  group: weekly-report
+concurrency:               # daily 와 같은 그룹: 늦게 끝나는 daily(수집·분류)를 기다렸다가 리포트를 만든다
+  group: monitor-pipeline
   cancel-in-progress: false
 jobs:
   report:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - id: install
-        run: pip install -e .
+        run: pip install -e . -c constraints.txt
       - name: report
         run: python -m app report
       # 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다: 이 저장소는 공개라서 누구나 내려받을 수 있다.

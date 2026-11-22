@@ -134,6 +134,11 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
         if n_items == 0:
             slack.send_ops_alert(f"파싱 0건 {source}/{b.value}: 수집된 항목이 없습니다 (셀렉터·API 변경 의심)")
             typer.echo(f"[{source}/{b.value}] 경고: 수집 0건", err=True)
+            continue
+        # 합계는 0이 아니어도 소스 하나가 죽었을 수 있다 (예: 유튜브는 들어오는데 인스타그램만 0건)
+        for name in repo.silent_sources(b, ZERO_CHECK[source], since=since):
+            slack.send_ops_alert(f"파싱 0건 {source}/{b.value} ({name}): 전에는 수집되던 소스가 이번에는 0건입니다")
+            typer.echo(f"[{source}/{b.value}] 경고: {name} 수집 0건", err=True)
     if failed:  # 모든 브랜드를 시도한 뒤에 실패로 끝낸다 (Actions 실행이 빨갛게 보이도록)
         typer.echo(f"[{source}] 실패한 브랜드: {', '.join(failed)}", err=True)
         raise typer.Exit(1)
@@ -189,17 +194,18 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
         week = last_week()
     before = prev_week(week)  # 형식 검증도 겸한다
 
-    # 재실행 시 중복 발송 방지: 이미 나간 채널은 건너뛰고, 나간 리포트와 같은 내용을 나머지 채널에 보낸다
-    already = set() if force or dry_run else repo.report_channels_sent(week)
-    stored = repo.get_report(week) if already else None
-    if stored is not None and already >= set(CHANNELS):
-        typer.echo(f"{week} 리포트는 이미 발송됨 ({', '.join(sorted(already))}). 다시 보내려면 --force")
+    # 재실행 시 중복 발송 방지: 이미 나간 것은 건너뛰고, 나간 리포트와 같은 내용으로 나머지만 보낸다.
+    # 기록 단위: "slack"·"email"(채널 전체 완료), "slack#0"·"slack#1"…(슬랙 메시지 하나하나)
+    sent = set() if force or dry_run else repo.report_channels_sent(week)
+    stored = repo.get_report(week) if sent else None
+    if stored is not None and sent >= set(CHANNELS):
+        typer.echo(f"{week} 리포트는 이미 발송됨 ({', '.join(CHANNELS)}). 다시 보내려면 --force")
         return
     if stored is not None:
         r = stored
-        typer.echo(f"{week} 리포트는 {', '.join(sorted(already))} 로 이미 발송됨 — 같은 내용으로 나머지 채널만 발송")
+        typer.echo(f"{week} 리포트는 일부 발송됨 — 같은 내용으로 나머지만 발송")
     else:
-        already = set()
+        sent = set()
         try:
             r = build(week)
         except Exception as e:
@@ -215,17 +221,37 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     out.write_text(html, encoding="utf-8")
     out.with_suffix(".md").write_text(markdown, encoding="utf-8")
     typer.echo(f"리포트 생성: {out}")
+
+    # 수집·분류가 덜 끝난 채로 리포트를 만들면 그 이벤트는 조용히 빠진다 — 알린다
+    unclassified = sum(1 for e in repo.events_of_week(week) if e.category is None)
+    if unclassified:
+        typer.echo(f"경고: {week} 이벤트 {unclassified}건이 미분류라 리포트에서 빠졌습니다", err=True)
     if dry_run:
         repo.save_report(r, sent=False)  # 이미 발송된 주차의 기록은 덮어쓰지 않는다
         return
+    if unclassified and stored is None:
+        slack.send_ops_alert(f"주간 리포트 {week}: 미분류 이벤트 {unclassified}건이 리포트에서 빠졌습니다 "
+                             "(classify 가 끝나기 전에 report 가 실행됨)")
+
+    def record(key: str) -> None:
+        """발송 기록. 첫 발송 직후 리포트 내용을 확정 저장해, 재실행 때 같은 내용을 쓰게 한다."""
+        if not sent:
+            repo.save_report(r, sent=True)
+        repo.mark_report_sent(week, key)
+        sent.add(key)
+
+    def send_slack() -> None:
+        done = sum(1 for key in sent if key.startswith("slack#"))  # 지난 실행에서 이미 나간 메시지 수
+        slack.send_report(r, full_report_url=env("REPORT_URL") or None, start=done,
+                          on_sent=lambda i: record(f"slack#{i}"))
 
     senders = {
-        "slack": lambda: slack.send_report(r, full_report_url=env("REPORT_URL") or None),
+        "slack": send_slack,
         "email": lambda: email.send_html(f"[경쟁사 주간 리포트] {week}", html, text=markdown),
     }
     failed: list[str] = []
     for name in CHANNELS:  # 한 채널 실패가 다른 채널 발송을 막지 않게
-        if name in already:
+        if name in sent:
             continue
         try:
             senders[name]()
@@ -235,14 +261,11 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
             slack.send_ops_alert(f"주간 리포트 발송 실패 {week}/{name}: {slack.describe_error(e)}")
             typer.echo(f"[{name}] 발송 실패: {slack.describe_error(e)}", err=True)
             continue
-        if not already:  # 첫 발송 직후 내용을 확정 저장 — 재실행 때 같은 내용을 쓴다
-            repo.save_report(r, sent=True)
-        repo.mark_report_sent(week, name)
-        already.add(name)
-    if not already:
-        repo.save_report(r, sent=False)  # 아무 채널도 못 나갔으면 초안으로만 남긴다
+        record(name)
+    if not sent:
+        repo.save_report(r, sent=False)  # 아무것도 못 나갔으면 초안으로만 남긴다
     if failed:
-        typer.echo(f"실패한 채널은 같은 명령을 다시 실행하면 그 채널만 재발송됩니다: {', '.join(failed)}", err=True)
+        typer.echo(f"같은 명령을 다시 실행하면 실패한 부분만 재발송됩니다: {', '.join(failed)}", err=True)
         raise typer.Exit(1)
 
 

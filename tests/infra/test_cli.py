@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 import app.infra
 from app.__main__ import cli, last_week, prev_week
-from app.core.models import Brand, ChangeEvent, ChangeType, SourceType, WeeklyReport
+from app.core.models import Brand, Category, ChangeEvent, ChangeType, SourceType, WeeklyReport
 from app.infra.notify import email, render, slack
 from app.infra.storage import repo
 
@@ -47,13 +47,14 @@ def test_prev_week_crosses_year_boundary():
 @pytest.fixture
 def counts(monkeypatch):
     """count_items_since 호출을 기록하고, 브랜드별로 정해 둔 건수를 돌려준다(기본 3건)."""
-    state = types.SimpleNamespace(calls=[], by_brand={})
+    state = types.SimpleNamespace(calls=[], by_brand={}, silent={})
 
     def count_items_since(brand, source_types, since):
         state.calls.append((brand, source_types, since))
         return state.by_brand.get(brand, 3)
 
     monkeypatch.setattr(repo, "count_items_since", count_items_since, raising=False)
+    monkeypatch.setattr(repo, "silent_sources", lambda brand, source_types, since: state.silent.get(brand, []))
     return state
 
 
@@ -102,6 +103,16 @@ def test_collect_sns_checks_sns_posts(monkeypatch, alerts, counts):
     assert result.exit_code == 0, result.output
     assert counts.calls[0][:2] == (Brand.SPAO, [SourceType.SNS_POST])
     assert len(alerts) == 1 and "파싱 0건 sns/spao" in alerts[0]
+
+
+def test_collect_alerts_when_one_of_several_sources_goes_silent(monkeypatch, alerts, counts):
+    from app.media_monitor import pipeline
+
+    monkeypatch.setattr(pipeline, "run_sns", lambda brand: [])
+    counts.silent[Brand.SPAO] = ["instagram"]  # 유튜브는 들어와서 합계는 0이 아니다
+    result = runner.invoke(cli, ["collect", "--source", "sns"])
+    assert result.exit_code == 0, result.output
+    assert len(alerts) == 1 and "파싱 0건 sns/spao (instagram)" in alerts[0]
 
 
 def test_collect_news_skips_zero_check(monkeypatch, alerts, counts):
@@ -244,6 +255,7 @@ def report_env(tmp_path, monkeypatch):
     state = types.SimpleNamespace(
         root=tmp_path, prev={}, get_report=[], render=[], slack=[], email=[], saved=[],
         slack_error=None, email_error=None, sent_channels=set(), builds=[],
+        slack_parts=[], slack_fail_at=None, week_events=[],
     )
 
     def build(week):
@@ -270,9 +282,16 @@ def report_env(tmp_path, monkeypatch):
         state.render.append(("md", prev_stats))
         return f"# {report.tldr}"
 
-    def send_report(report, full_report_url=None):
+    def send_report(report, full_report_url=None, start=0, on_sent=None):
+        """본 메시지(0번) + 후속 메시지 1개(1번). slack_fail_at 번째 메시지에서 실패할 수 있다."""
         if state.slack_error:
             raise state.slack_error
+        for i in range(start, 2):
+            if state.slack_fail_at == i:
+                raise RuntimeError(f"슬랙 {i}번 메시지 실패")
+            state.slack_parts.append(i)
+            if on_sent:
+                on_sent(i)
         state.slack.append((report.week, full_report_url))
 
     def send_html(subject, html, text=None):
@@ -283,6 +302,7 @@ def report_env(tmp_path, monkeypatch):
     monkeypatch.delenv("REPORT_URL", raising=False)
     monkeypatch.setattr(config, "ROOT", tmp_path)
     monkeypatch.setattr(report_builder, "build", build)
+    monkeypatch.setattr(repo, "events_of_week", lambda week: state.week_events)
     monkeypatch.setattr(repo, "report_channels_sent", lambda week: set(state.sent_channels))
     monkeypatch.setattr(repo, "mark_report_sent", lambda week, channel: state.sent_channels.add(channel))
     monkeypatch.setattr(repo, "get_report", get_report, raising=False)
@@ -369,7 +389,7 @@ def test_report_rerun_sends_only_the_failed_channel_with_same_content(report_env
     assert len(report_env.slack) == 1  # 슬랙은 다시 나가지 않는다
     assert report_env.builds == ["2026-W47"]  # LLM으로 다시 만들지 않는다
     assert report_env.email == [("[경쟁사 주간 리포트] 2026-W47", "<html>요약</html>", "# 요약")]
-    assert report_env.sent_channels == {"slack", "email"}
+    assert report_env.sent_channels >= {"slack", "email"}
 
 
 def test_report_rerun_after_full_send_does_nothing(report_env, alerts):
@@ -410,6 +430,27 @@ def test_report_failure_alert_does_not_leak_webhook_url(report_env, alerts):
     assert result.exit_code == 1
     assert "2026-W47/slack" in alerts[0] and "HTTP 404" in alerts[0]
     assert "SECRETTOKEN" not in alerts[0] + result.output and "hooks.slack.com" not in alerts[0] + result.output
+
+
+def test_report_slack_followup_failure_resumes_without_resending_main(report_env, alerts):
+    report_env.slack_fail_at = 1  # 본 메시지는 나가고 브랜드별 후속 메시지에서 실패
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 1
+    assert report_env.slack_parts == [0] and "slack" not in report_env.sent_channels
+
+    report_env.slack_fail_at = None
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0, result.output
+    assert report_env.slack_parts == [0, 1]  # 본 메시지(0번)는 다시 나가지 않는다
+    assert len(report_env.email) == 1 and report_env.builds == ["2026-W47"]
+
+
+def test_report_warns_when_week_has_unclassified_events(report_env, alerts):
+    report_env.week_events = [_event(1), _event(2, importance=3)]
+    report_env.week_events[1].category = next(iter(Category))
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0, result.output
+    assert len(alerts) == 1 and "미분류 이벤트 1건" in alerts[0]
+    assert "1건이 미분류" in result.output
 
 
 def test_report_build_failure_alerts_and_exits_nonzero(report_env, monkeypatch, alerts):

@@ -217,3 +217,17 @@ def test_events_stamped_on_monday_morning_kst_belong_to_the_new_week(tmp_db):
     repo.save_events([_event(1, detected_at=stamped)])
     assert repo.events_of_week("2026-W47") == []
     assert len(repo.events_of_week("2026-W48")) == 1
+
+
+def test_silent_sources_finds_a_source_that_stopped_producing(tmp_db):
+    now = _now()
+    since = now - timedelta(minutes=5)
+    sns = {"source_type": SourceType.SNS_POST}
+    repo.save_items([_item(ext="y1", source="youtube", collected_at=now, **sns),
+                     _item(ext="y0", source="youtube", collected_at=now - timedelta(days=2), **sns),
+                     _item(ext="i1", source="instagram", collected_at=now - timedelta(days=1), **sns),
+                     _item(ext="p1", source="spao.com", collected_at=now - timedelta(days=1))])
+    assert repo.silent_sources(Brand.SPAO, [SourceType.SNS_POST], since) == ["instagram"]
+    assert repo.silent_sources(Brand.SPAO, [SourceType.SITE_PRODUCT], since) == ["spao.com"]
+    assert repo.silent_sources(Brand.UNIQLO, [SourceType.SNS_POST], since) == []  # 수집한 적 없는 소스는 대상 아님
+    assert repo.silent_sources(Brand.SPAO, [], since) == []

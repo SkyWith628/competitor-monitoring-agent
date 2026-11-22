@@ -51,6 +51,8 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 |---|---|
 | `수집 실패 <소스>/<브랜드>` | 수집기가 예외를 던짐 |
 | `파싱 0건 <소스>/<브랜드>` | 예외는 없는데 저장된 항목이 0건 (site·sns만 검사. news는 새 기사만 저장하므로 0건이 정상) |
+| `파싱 0건 <소스>/<브랜드> (<소스 이름>)` | 합계는 0이 아니지만, 전에는 수집되던 소스 하나가 이번에는 0건 (예: 유튜브는 들어오는데 인스타그램만 0건) |
+| `주간 리포트 <주차>: 미분류 이벤트 N건` | 분류가 끝나기 전에 리포트가 만들어져 그 이벤트가 빠짐 |
 | `LLM 분류 실패` | 분류 호출 실패. 이벤트는 미분류로 남아 다음 실행에서 다시 시도 |
 | `주간 리포트 생성 실패` / `발송 실패 <주차>/<채널>` | 한 채널이 실패해도 다른 채널은 발송한다 |
 | `긴급 알림 N건 발송 실패` | 중요도 5 알림이 리포트 채널로 나가지 못함. 다음 `classify` 실행에서 다시 시도 |
@@ -76,6 +78,8 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 - **daily-collect** (매일 06:00 KST): site → news → sns 수집 → 분류 → 스냅샷 정리. 한 단계가 실패해도 다음 단계는 실행된다.
 - **weekly-report** (매주 월 08:00 KST): 리포트를 슬랙·메일로 발송한다. 저장소가 공개라서 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다. 대시보드는 `DATABASE_URL`을 넣고 로컬에서 `python -m app dashboard`로 만든다.
 - 둘 다 Actions 탭에서 **Run workflow**로 수동 실행할 수 있다.
+- 두 워크플로는 같은 동시 실행 그룹(`monitor-pipeline`)이라 겹치지 않는다. daily가 늦게 끝나면 weekly는 기다렸다가 시작한다.
+- 설치는 `constraints.txt`에 고정된 버전으로 한다. 의존성을 올릴 때는 새 가상환경에서 `pip install -e ".[dev]"` 후 `pip freeze --exclude-editable` 결과로 파일을 바꾸고 테스트를 돌린다.
 - 두 워크플로는 `REQUIRE_DATABASE_URL=1`로 돈다. `DATABASE_URL` Secret이 없으면 임시 SQLite로 내려가지 않고 바로 실패하며 운영 경고를 보낸다.
 - CLI는 실행할 때 시간대를 한국 시간으로 고정한다. 러너(UTC)에서 돌아도 수집·감지 시각과 주차 경계는 한국 시간 기준이다. (Windows는 PC의 시간대 설정을 따른다)
 

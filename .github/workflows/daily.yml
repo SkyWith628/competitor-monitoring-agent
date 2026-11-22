@@ -3,8 +3,8 @@ on:
   schedule:
     - cron: "0 21 * * *"   # 매일 06:00 KST (UTC 21:00)
   workflow_dispatch:
-concurrency:               # 앞선 실행이 끝나기 전에 또 시작되면 기다린다 (같은 DB에 동시 수집 방지)
-  group: daily-collect
+concurrency:               # daily 와 weekly 는 같은 그룹: 수집·분류가 끝난 뒤에야 주간 리포트가 시작된다
+  group: monitor-pipeline
   cancel-in-progress: false
 jobs:
   collect:
@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - id: install
-        run: pip install -e . && playwright install --with-deps chromium
+        run: pip install -e . -c constraints.txt && playwright install --with-deps chromium
       # 수집 단계는 앞 단계가 실패해도(일부 브랜드 실패 → exit 1) 각각 실행한다. 설치가 실패했으면 건너뛴다.
       - name: collect site
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

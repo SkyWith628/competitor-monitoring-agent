@@ -36,7 +36,7 @@ tests/<역할 폴더>/    각자 자기 폴더 테스트
 ## 시작하기
 ```powershell
 python -m venv .venv; .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev]" -c constraints.txt
 copy .env.example .env      # 키 채우기
 python -m app init-db
 pytest -q
