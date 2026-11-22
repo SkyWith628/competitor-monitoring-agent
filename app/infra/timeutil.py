@@ -1,4 +1,12 @@
-"""시간대 처리. 담당: D"""
+"""시간대 처리. 담당: D
+
+이 프로젝트의 시각 규칙
+    - 수집 시각(RawItem.collected_at)과 감지 시각(ChangeEvent.detected_at)은 app/core/models.py 가
+      datetime.now() 로 찍는다. 시간대 정보가 없는 값이고, "한국 시각"이라고 약속한다.
+    - 주차 경계(월요일 00:00), 날짜별 묶음, "36시간째 수집 없음" 같은 판단이 모두 이 약속에 기대고 있다.
+    - 그래서 CLI는 실행할 때마다 use_korean_time() 으로 프로세스의 시간대를 한국으로 맞춘다.
+      UTC 로 도는 GitHub Actions 러너에서도 datetime.now() 가 한국 시각을 돌려주게 하기 위해서다.
+"""
 from __future__ import annotations
 
 import os

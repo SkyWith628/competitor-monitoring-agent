@@ -1,9 +1,20 @@
 """DB 연결·스키마 (SQLAlchemy Core). 담당: D
 
-- `DATABASE_URL`이 있으면 PostgreSQL(운영, GitHub Actions처럼 디스크가 사라지는 환경)
-- 없으면 `DB_PATH`의 SQLite 파일(로컬·테스트)
+어떤 DB를 쓰는가
+    - 환경변수 `DATABASE_URL` 이 있으면 PostgreSQL — 운영용. GitHub Actions 러너는 실행이 끝나면
+      디스크가 사라지므로 파일 DB를 쓸 수 없다.
+    - 없으면 `DB_PATH`(기본 data/monitor.db)의 SQLite 파일 — 로컬 개발·테스트용.
+    - `REQUIRE_DATABASE_URL=1` 인데 DATABASE_URL 이 비어 있으면 오류를 낸다 (운영 워크플로가 조용히
+      임시 SQLite 로 내려가는 일을 막는다).
 
-두 DB 모두 같은 스키마를 쓴다. `data` 컬럼은 pydantic JSON을 TEXT 그대로 저장한다.
+이 파일을 직접 쓸 일
+    A·B·C는 이 파일 대신 repo.py 의 함수를 쓴다. 여기 있는 것은 repo.py 와 CLI(init-db, doctor)가 쓴다.
+
+스키마를 바꿀 때
+    - 테이블·인덱스 **추가**는 아래에 정의만 하면 다음 연결 때 자동으로 만들어진다.
+    - 기존 테이블의 컬럼 변경은 자동으로 되지 않는다(마이그레이션 도구 없음). 모델에 필드를 추가하는
+      정도는 `data`(JSON 문자열) 안에서 해결되므로 테이블을 바꿀 필요가 없다.
+    - 두 DB 모두 같은 스키마를 쓴다.
 """
 from __future__ import annotations
 
@@ -136,7 +147,11 @@ def engine() -> Engine:
 
 
 class _Conn:
-    """SQLAlchemy 연결을 감싼다. 문자열 SQL도 그대로 실행할 수 있다(파라미터는 :name + dict)."""
+    """SQLAlchemy 연결을 감싼다. 문자열 SQL도 그대로 실행할 수 있다(파라미터는 :name + dict).
+
+    예: conn.execute("SELECT data FROM reports WHERE week = :w", {"w": "2026-W47"}).fetchone()
+    사용자 입력이나 수집한 값을 SQL 문자열에 직접 붙이지 말고 반드시 파라미터로 넘긴다.
+    """
 
     def __init__(self, conn: Connection):
         self._conn = conn
@@ -150,13 +165,21 @@ class _Conn:
 
 @contextmanager
 def connect() -> Iterator[_Conn]:
-    """`with connect() as conn:` — 블록이 끝나면 커밋(예외면 롤백)하고 연결을 닫는다."""
+    """`with connect() as conn:` — 블록이 끝나면 커밋(예외면 롤백)하고 연결을 닫는다.
+
+    블록 하나가 트랜잭션 하나다. 예를 들어 save_items 는 최신 상태 갱신과 스냅샷 추가를 한 블록에서
+    하므로, 중간에 실패하면 둘 다 반영되지 않는다.
+    """
     with engine().begin() as conn:
         yield _Conn(conn)
 
 
 def upsert(table: Table):
-    """지금 DB 방언의 INSERT (on_conflict_do_update 지원). SQLite·PostgreSQL 문법이 같다."""
+    """"있으면 갱신, 없으면 추가"용 INSERT. 지금 쓰는 DB에 맞는 것을 골라 준다.
+
+    표준 SQL에는 upsert 가 없어 DB마다 전용 구문이 필요한데, SQLAlchemy 의 SQLite·PostgreSQL insert 는
+    둘 다 .on_conflict_do_update(...) / .on_conflict_do_nothing(...) 를 같은 모양으로 지원한다.
+    """
     return postgresql.insert(table) if is_postgres() else sqlite.insert(table)
 
 
@@ -172,5 +195,6 @@ def ping() -> None:
 
 
 def init_db() -> None:
+    """테이블·인덱스를 (없으면) 만든다. 이미 있는 것은 건드리지 않으므로 여러 번 불러도 안전하다."""
     _initialized.discard(database_url())
     engine()
