@@ -1,26 +1,138 @@
+{# 메일 클라이언트 호환: 외부 CSS/JS 없이 table 레이아웃 + 인라인 스타일만 쓴다. #}
+{% set font = "font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',Arial,sans-serif;" %}
+{% set h2 = font ~ "font-size:18px;line-height:26px;color:#111827;margin:0;padding:28px 0 10px 0;border-bottom:2px solid #111827;" %}
+{% set th = font ~ "font-size:13px;line-height:18px;color:#374151;background-color:#f3f4f6;padding:7px 8px;border:1px solid #d1d5db;" %}
+{% set td = font ~ "font-size:14px;line-height:20px;color:#1f2937;padding:7px 8px;border:1px solid #d1d5db;" %}
+{% macro num(c) %}{{ c.value }}{% if c.delta %} <span style="color:#6b7280;font-size:12px;">({{ c.delta }})</span>{% endif %}{% endmacro %}
 <!doctype html>
 <html lang="ko">
-<body style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 720px; margin: auto; color: #222;">
-  <h1>📊 경쟁사 주간 리포트 {{ r.week }}</h1>
-  <p style="background:#f4f6f8; padding:12px; border-radius:8px;"><b>TL;DR</b> {{ r.tldr }}</p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경쟁사 주간 리포트 {{ r.week }}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;">
+<tr><td align="center" style="padding:16px 8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:720px;background-color:#ffffff;border:1px solid #e5e7eb;">
+<tr><td style="padding:24px 20px 28px 20px;{{ font }}color:#1f2937;font-size:15px;line-height:24px;">
 
-  <h2>🔥 Top 5 변화</h2>
-  <ol>
+  <h1 style="{{ font }}font-size:24px;line-height:32px;color:#111827;margin:0 0 16px 0;">📊 경쟁사 주간 리포트 {{ r.week }}</h1>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td style="{{ font }}background-color:#eef2ff;border-left:4px solid #4f46e5;padding:14px 16px;font-size:15px;line-height:24px;color:#1f2937;">
+    <b>TL;DR</b> {{ r.tldr }}
+  </td></tr>
+  </table>
+
+  <h2 style="{{ h2 }}">🔥 Top 5 변화</h2>
+  {% if r.top_events %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   {% for e in r.top_events %}
-    <li>[{{ brand_label[e.brand.value] }}] <a href="{{ e.url }}">{{ e.title }}</a>{% if e.llm_note %} — {{ e.llm_note }}{% endif %}</li>
+  <tr>
+    <td width="28" valign="top" style="{{ font }}font-size:15px;line-height:24px;color:#6b7280;padding:12px 0 12px 0;border-bottom:1px solid #e5e7eb;">{{ loop.index }}.</td>
+    <td valign="top" style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;padding:12px 0 12px 0;border-bottom:1px solid #e5e7eb;">
+      <span style="{{ font }}font-size:12px;line-height:18px;color:#3730a3;background-color:#e0e7ff;padding:2px 8px;white-space:nowrap;">{{ brand_label.get(e.brand.value, e.brand.value) }}</span>
+      <span style="{{ font }}font-size:12px;line-height:18px;color:#4b5563;background-color:#f3f4f6;padding:2px 8px;white-space:nowrap;">{{ change_label.get(e.change_type.value, e.change_type.value) }}</span><br>
+      <a href="{{ e.url | safe_url }}" style="color:#1d4ed8;text-decoration:underline;font-weight:bold;">{{ e.title }}</a>
+      {% if e.llm_note %}<br><span style="color:#4b5563;">{{ e.llm_note }}</span>{% endif %}
+    </td>
+  </tr>
   {% endfor %}
-  </ol>
+  </table>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">이번 주 감지된 주요 변화가 없습니다.</p>
+  {% endif %}
 
-  <h2>브랜드별 요약</h2>
-  {% for s in r.brand_summaries %}
-    <h3>{{ brand_label[s.brand.value] }}</h3>
-    <ul>{% for h in s.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+  <h2 style="{{ h2 }}">브랜드별 요약</h2>
+  {% for s in summaries %}
+  <h3 style="{{ font }}font-size:16px;line-height:24px;color:#111827;margin:16px 0 4px 0;">{{ brand_label.get(s.brand.value, s.brand.value) }}</h3>
+  <ul style="margin:0;padding:0 0 0 22px;">
+    {% for h in s.highlights %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ h }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">브랜드별 요약이 없습니다.</p>
   {% endfor %}
 
-  <h2>💡 인사이트</h2>
-  <ul>{% for i in r.insights %}<li>{{ i }}</li>{% endfor %}</ul>
+  <h2 style="{{ h2 }}">💡 인사이트</h2>
+  {% if r.insights %}
+  <ul style="margin:12px 0 0 0;padding:0 0 0 22px;">
+    {% for i in r.insights %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ i }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">(없음)</p>
+  {% endif %}
 
-  <h2>✅ 액션 제안</h2>
-  <ul>{% for a in r.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+  <h2 style="{{ h2 }}">✅ 액션 제안</h2>
+  {% if r.actions %}
+  <ul style="margin:12px 0 0 0;padding:0 0 0 22px;">
+    {% for a in r.actions %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ a }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">(없음)</p>
+  {% endif %}
+
+  <h2 style="{{ h2 }}">부록: 수치 표</h2>
+  {% if stats.rows %}
+  <p style="margin:12px 0 8px 0;font-size:13px;line-height:20px;color:#6b7280;">브랜드 × 변화 유형 건수{% if stats.has_prev %} · 괄호 안은 전주 대비 증감{% endif %}</p>
+  {# 좁은 화면에서는 표만 가로 스크롤 (지원하지 않는 클라이언트는 화면 맞춤 축소로 보인다) #}
+  <div style="overflow-x:auto;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+    <tr>
+      <th align="left" style="{{ th }}">변화 유형</th>
+      {% for c in stats.columns %}
+      <th align="right" style="{{ th }}word-break:keep-all;">{{ c }}</th>
+      {% endfor %}
+      <th align="right" style="{{ th }}">합계</th>
+    </tr>
+    {% for row in stats.rows %}
+    <tr>
+      <td align="left" style="{{ td }}word-break:keep-all;">{{ row.label }}</td>
+      {% for c in row.cells %}
+      <td align="right" style="{{ td }}">{{ num(c) }}</td>
+      {% endfor %}
+      <td align="right" style="{{ td }}font-weight:bold;">{{ num(row.total) }}</td>
+    </tr>
+    {% endfor %}
+    {% if stats.total_row %}
+    <tr>
+      <td align="left" style="{{ td }}font-weight:bold;background-color:#f9fafb;">{{ stats.total_row.label }}</td>
+      {% for c in stats.total_row.cells %}
+      <td align="right" style="{{ td }}font-weight:bold;background-color:#f9fafb;">{{ num(c) }}</td>
+      {% endfor %}
+      <td align="right" style="{{ td }}font-weight:bold;background-color:#f9fafb;">{{ num(stats.total_row.total) }}</td>
+    </tr>
+    {% endif %}
+  </table>
+  </div>
+  {% endif %}
+  {% if stats.extras %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:16px;">
+    <tr>
+      <th align="left" style="{{ th }}">지표</th>
+      <th align="right" style="{{ th }}">값</th>
+    </tr>
+    {% for x in stats.extras %}
+    <tr>
+      <td align="left" style="{{ td }}">{{ x.label }}</td>
+      <td align="right" style="{{ td }}">{{ num(x) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% if not stats.rows and not stats.extras %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">집계된 수치가 없습니다.</p>
+  {% endif %}
+
+</td></tr>
+</table>
+</td></tr>
+</table>
 </body>
 </html>
