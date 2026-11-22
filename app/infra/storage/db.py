@@ -41,13 +41,20 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 """
 
 
+_initialized: set[Path] = set()
+
+
 def connect() -> sqlite3.Connection:
+    """연결을 돌려준다. 프로세스에서 처음 여는 DB 파일이면 테이블도 만든다(init-db 누락 방지)."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    if DB_PATH not in _initialized:
+        conn.executescript(SCHEMA)
+        _initialized.add(DB_PATH)
     return conn
 
 
 def init_db() -> None:
-    with connect() as conn:
-        conn.executescript(SCHEMA)
+    _initialized.discard(DB_PATH)
+    connect().close()

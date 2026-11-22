@@ -8,13 +8,23 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import typer
 
 from app.core.models import Brand
 
 cli = typer.Typer(help="경쟁사 모니터링 Agent")
+KST = ZoneInfo("Asia/Seoul")
+SOURCES = ("site", "news", "sns")
+
+
+def last_week(now: datetime | None = None) -> str:
+    """한국 시간 기준 지난주의 ISO 주차. (GitHub Actions 러너는 UTC라 date.today()를 쓰면 한 주 밀린다)"""
+    day = (now or datetime.now(KST)).astimezone(KST).date() - timedelta(days=7)
+    y, w, _ = day.isocalendar()
+    return f"{y}-W{w:02d}"
 
 
 @cli.command("init-db")
@@ -30,6 +40,8 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
             brand: Brand | None = typer.Option(None)) -> None:
     from app.infra.notify.slack import send_ops_alert
 
+    if source not in SOURCES:
+        raise typer.BadParameter("source 는 site | news | sns")
     brands = [brand] if brand else list(Brand)
     for b in brands:
         try:
@@ -39,11 +51,9 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
             elif source == "news":
                 from app.media_monitor.pipeline import run_news
                 events = run_news(b)
-            elif source == "sns":
+            else:
                 from app.media_monitor.pipeline import run_sns
                 events = run_sns(b)
-            else:
-                raise typer.BadParameter("source 는 site | news | sns")
             typer.echo(f"[{source}/{b.value}] 이벤트 {len(events)}건")
         except NotImplementedError:
             typer.echo(f"[{source}/{b.value}] 아직 구현되지 않음 (TODO)")
@@ -58,6 +68,9 @@ def classify() -> None:
     from app.infra.storage import repo
 
     events = repo.unclassified_events()
+    if not events:
+        typer.echo("분류할 이벤트 없음")
+        return
     repo.update_events(_classify(events))
     typer.echo(f"분류 완료 {len(events)}건")
 
@@ -71,16 +84,16 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     from app.infra.storage import repo
 
     if week is None:
-        y, w, _ = date.fromordinal(date.today().toordinal() - 7).isocalendar()
-        week = f"{y}-W{w:02d}"
+        week = last_week()
     r = build(week)
     html = render.to_html(r)
     out = ROOT / "data" / f"report-{week}.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
     if not dry_run:
         slack.send_blocks(render.to_slack_blocks(r), fallback_text=r.tldr)
         email.send_html(f"[경쟁사 주간 리포트] {week}", html)
-    repo.save_report(r)
+    repo.save_report(r, sent=not dry_run)
     typer.echo(f"리포트 생성: {out}")
 
 

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.core.models import Brand, ChangeEvent, RawItem, SourceType, WeeklyReport
 from app.infra.storage.db import connect
+
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _week_range(week: str) -> tuple[str, str]:
@@ -77,9 +80,10 @@ def update_events(events: list[ChangeEvent]) -> None:
 
 def unclassified_events() -> list[ChangeEvent]:
     with connect() as conn:
-        rows = conn.execute("SELECT data FROM change_events").fetchall()
-    events = [ChangeEvent.model_validate_json(r["data"]) for r in rows]
-    return [e for e in events if e.category is None]
+        rows = conn.execute(
+            "SELECT data FROM change_events WHERE json_extract(data, '$.category') IS NULL ORDER BY id"
+        ).fetchall()
+    return [ChangeEvent.model_validate_json(r["data"]) for r in rows]
 
 
 def events_of_week(week: str) -> list[ChangeEvent]:
@@ -92,11 +96,15 @@ def events_of_week(week: str) -> list[ChangeEvent]:
 
 
 # ---------- Report (C 생성, D 발송) ----------
-def save_report(report: WeeklyReport) -> None:
+def save_report(report: WeeklyReport, sent: bool = True) -> None:
+    """sent=False(dry-run)면 발송 시각을 새로 찍지 않고, 이미 발송된 기록이 있으면 그 시각을 유지한다."""
+    sent_at = datetime.now(KST).isoformat() if sent else None
     with connect() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO reports (week, tldr, data, sent_at) VALUES (?,?,?,?)",
-            (report.week, report.tldr, report.model_dump_json(), datetime.now().isoformat()),
+            "INSERT INTO reports (week, tldr, data, sent_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(week) DO UPDATE SET tldr=excluded.tldr, data=excluded.data, "
+            "sent_at=COALESCE(excluded.sent_at, reports.sent_at)",
+            (report.week, report.tldr, report.model_dump_json(), sent_at),
         )
 
 
