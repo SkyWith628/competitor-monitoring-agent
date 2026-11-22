@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Column, Connection, Engine, Integer, MetaData, Table, Text, create_engine, text
+from sqlalchemy import Column, Connection, Engine, Index, Integer, MetaData, Table, Text, create_engine, text
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.pool import NullPool
@@ -80,6 +80,15 @@ urgent_alerts = Table(  # 긴급 알림을 보낸 이벤트 — 실패한 알림
     Column("sent_at", Text, nullable=False),
 )
 
+# 자주 쓰는 범위 조회용 인덱스. 데이터가 쌓여도 주간 리포트·정리·0건 검사가 전체를 훑지 않게 한다.
+INDEXES = (
+    Index("ix_raw_items_brand_type_collected", raw_items.c.brand, raw_items.c.source_type,
+          raw_items.c.collected_at),
+    Index("ix_snapshots_collected_at", snapshots.c.collected_at),
+    Index("ix_change_events_detected_at", change_events.c.detected_at),
+    Index("ix_llm_calls_called_at", llm_calls.c.called_at),
+)
+
 _engines: dict[str, Engine] = {}
 _initialized: set[str] = set()
 
@@ -120,6 +129,8 @@ def engine() -> Engine:
         _engines[url] = eng
     if url not in _initialized:
         metadata.create_all(eng)  # 이미 있는 테이블은 건드리지 않는다 (기존 SQLite 파일 그대로 사용)
+        for index in INDEXES:  # create_all 은 이미 있던 테이블에 인덱스를 추가해 주지 않는다
+            index.create(eng, checkfirst=True)
         _initialized.add(url)
     return eng
 
@@ -147,6 +158,17 @@ def connect() -> Iterator[_Conn]:
 def upsert(table: Table):
     """지금 DB 방언의 INSERT (on_conflict_do_update 지원). SQLite·PostgreSQL 문법이 같다."""
     return postgresql.insert(table) if is_postgres() else sqlite.insert(table)
+
+
+def backend() -> str:
+    """지금 쓰는 DB 종류. 주소(비밀번호 포함 가능)는 돌려주지 않는다."""
+    return "postgresql" if is_postgres() else "sqlite"
+
+
+def ping() -> None:
+    """DB에 실제로 연결해 본다. 안 되면 예외."""
+    with connect() as conn:
+        conn.execute("SELECT 1")
 
 
 def init_db() -> None:
