@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from app.__main__ import use_korean_time
 from app.infra.storage import db
+from app.infra.timeutil import use_korean_time
 
 
 @pytest.fixture(autouse=True)
