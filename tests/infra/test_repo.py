@@ -1,6 +1,13 @@
 """[D] 저장소 함수 테스트 — A·B·C가 기대하는 동작을 고정한다."""
+from datetime import UTC, datetime, timedelta
+
 from app.core.models import Brand, Category, ChangeEvent, ChangeType, RawItem, SourceType, WeeklyReport
 from app.infra.storage import db, repo
+
+
+def _now() -> datetime:
+    """수집기가 찍는 datetime.now()와 같은 로컬 naive 시각."""
+    return datetime.now(UTC).astimezone().replace(tzinfo=None)
 
 
 def _item(ext: str = "p1", price: int = 39900, **kw) -> RawItem:
@@ -10,8 +17,9 @@ def _item(ext: str = "p1", price: int = 39900, **kw) -> RawItem:
 
 
 def _event(day: int, **kw) -> ChangeEvent:
-    return ChangeEvent(brand=Brand.SPAO, change_type=ChangeType.PRICE_DOWN, title="할인",
-                       url="https://spao.com/p1", detected_at=f"2026-11-{day:02d}T09:00:00", **kw)
+    base = {"brand": Brand.SPAO, "change_type": ChangeType.PRICE_DOWN, "title": "할인",
+            "url": "https://spao.com/p1", "detected_at": f"2026-11-{day:02d}T09:00:00"}
+    return ChangeEvent(**(base | kw))
 
 
 def _report(week: str, tldr: str) -> WeeklyReport:
@@ -73,3 +81,94 @@ def test_dry_run_save_does_not_mark_sent_or_clear_it(tmp_db):
     assert first is not None
     repo.save_report(_report("2026-W47", "재실행"), sent=False)
     assert sent_at() == first
+
+
+def test_database_url_selects_backend(tmp_db, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    assert db.database_url().startswith("sqlite:///") and not db.is_postgres()
+    for raw in ("postgres://u:p@h:5432/d", "postgresql://u:p@h:5432/d", "postgresql+psycopg://u:p@h:5432/d"):
+        monkeypatch.setenv("DATABASE_URL", raw)
+        assert db.database_url() == "postgresql+psycopg://u:p@h:5432/d" and db.is_postgres()
+
+
+def test_init_db_creates_tables(tmp_db):
+    db.init_db()
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] == 0
+
+
+def test_count_items_since_filters_brand_type_and_time(tmp_db):
+    now = _now()
+    old, new = now - timedelta(days=2), now - timedelta(hours=1)
+    repo.save_items([
+        _item(ext="old", collected_at=old),
+        _item(ext="new", collected_at=new),
+        _item(ext="page", source_type=SourceType.SITE_PAGE, collected_at=new),
+        _item(ext="news", source_type=SourceType.NEWS, source="naver_news", collected_at=new),
+        _item(ext="other", brand=Brand.UNIQLO, collected_at=new),
+    ])
+    since = now - timedelta(days=1)
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SITE_PRODUCT], since) == 1
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SITE_PRODUCT, SourceType.SITE_PAGE], since) == 2
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SITE_PRODUCT], now - timedelta(days=3)) == 2
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SITE_PRODUCT], new) == 1  # 경계 포함(>=)
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SNS_POST], since) == 0
+    assert repo.count_items_since(Brand.SPAO, [], since) == 0
+    assert repo.count_items_since(Brand.SPAO, [SourceType.SITE_PRODUCT], since.astimezone()) == 1  # tz 있어도 됨
+
+
+def test_item_counts_by_brand_and_source_type(tmp_db):
+    assert repo.item_counts() == {}
+    repo.save_items([
+        _item(ext="a"), _item(ext="b"), _item(ext="a"),  # 같은 키는 한 건
+        _item(ext="n", source_type=SourceType.NEWS, source="naver_news"),
+        _item(ext="u", brand=Brand.UNIQLO),
+    ])
+    assert repo.item_counts() == {"spao": {"site_product": 2, "news": 1}, "uniqlo": {"site_product": 1}}
+
+
+def test_prune_snapshots_deletes_only_old_ones_and_keeps_latest_items(tmp_db):
+    now = _now()
+    repo.save_items([_item(collected_at=now - timedelta(weeks=9)),
+                     _item(ext="p2", collected_at=now - timedelta(weeks=7)), _item(ext="p3", collected_at=now)])
+    assert repo.prune_snapshots() == 1
+    assert repo.prune_snapshots() == 0
+    assert repo.prune_snapshots(weeks=1) == 1
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 1
+    assert set(repo.latest_items(Brand.SPAO, "spao.com")) == {"p1", "p2", "p3"}
+
+
+def test_llm_usage_aggregates_per_model(tmp_db):
+    assert repo.llm_usage() == []
+    repo.save_llm_call("claude-haiku", 100, 10)
+    repo.save_llm_call("claude-haiku", 200, 20)
+    repo.save_llm_call("claude-sonnet", 1000, 300)
+    assert repo.llm_usage() == [
+        {"model": "claude-haiku", "calls": 2, "input_tokens": 300, "output_tokens": 30},
+        {"model": "claude-sonnet", "calls": 1, "input_tokens": 1000, "output_tokens": 300},
+    ]
+    with db.connect() as conn:  # 기간 밖 호출은 빠진다
+        conn.execute("UPDATE llm_calls SET called_at = :t WHERE model = 'claude-sonnet'",
+                     {"t": (_now() - timedelta(days=40)).isoformat()})
+    assert [u["model"] for u in repo.llm_usage(days=30)] == ["claude-haiku"]
+    assert len(repo.llm_usage(days=60)) == 2
+
+
+def test_recent_events_newest_first_within_days(tmp_db):
+    now = _now()
+    events = [_event(1, detected_at=now - timedelta(days=d), title=f"d{d}") for d in (40, 3, 10, 0)]
+    repo.save_events(events)
+    assert [e.title for e in repo.recent_events()] == ["d0", "d3", "d10"]
+    assert [e.title for e in repo.recent_events(days=5)] == ["d0", "d3"]
+    assert repo.recent_events()[0].id == events[3].id
+
+
+def test_get_and_list_reports(tmp_db):
+    assert repo.get_report("2026-W47") is None and repo.list_reports() == []
+    for week in ("2026-W46", "2026-W45", "2026-W47"):
+        repo.save_report(_report(week, f"{week} 요약"), sent=False)
+    repo.save_report(_report("2026-W46", "수정본"))
+    assert repo.get_report("2026-W46") == _report("2026-W46", "수정본")
+    assert [r.week for r in repo.list_reports()] == ["2026-W47", "2026-W46", "2026-W45"]
+    assert [r.week for r in repo.list_reports(limit=2)] == ["2026-W47", "2026-W46"]
