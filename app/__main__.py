@@ -7,6 +7,8 @@
   python -m app report --week 2026-W47 [--dry-run]     # C + D (매주)
   python -m app prune [--weeks 8]                      # 오래된 스냅샷 정리
   python -m app dashboard                              # 정적 대시보드 HTML 생성
+  python -m app status [--strict]                      # 수집·분류·발송 현황
+  python -m app doctor [--send-test]                   # 설정 점검 (키·DB·웹훅·메일)
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ ZERO_CHECK: dict[str, list[SourceType]] = {
     "sns": [SourceType.SNS_POST],
 }
 CHANNELS = ("slack", "email")  # 주간 리포트 발송 채널
+STALE_HOURS = 36  # 하루 한 번 수집하므로, 이보다 오래 소식이 없으면 수집이 멈춘 것으로 본다
 WEEK_RE = re.compile(r"(\d{4})-W(\d{2})")
 
 
@@ -55,13 +58,15 @@ def prev_week(week: str) -> str:
 
 
 @cli.callback()
-def _setup() -> None:
+def _setup(ctx: typer.Context) -> None:
     """모든 명령 실행 전에: 한국 시간 고정, DB 설정 확인."""
     from app.infra.notify import slack
     from app.infra.storage import db
     from app.infra.timeutil import use_korean_time
 
     use_korean_time()
+    if ctx.invoked_subcommand == "doctor":  # 설정 점검은 설정이 틀렸을 때도 끝까지 돌아야 한다
+        return
     try:
         db.database_url()
     except RuntimeError as e:
@@ -268,6 +273,131 @@ def dashboard() -> None:
     from app.infra import dashboard as _dashboard
 
     typer.echo(f"대시보드 생성: {_dashboard.build()}")
+
+
+def _age_text(hours: float) -> str:
+    if hours < 1:
+        return "방금"
+    return f"{int(hours)}시간 전" if hours < 48 else f"{int(hours // 24)}일 전"
+
+
+@cli.command()
+def status(strict: bool = typer.Option(False, help="멈춘 소스가 있으면 종료 코드 1")) -> None:
+    """수집·분류·발송이 지금 어떤 상태인지 한 화면으로 보여준다."""
+    from app.infra.notify.render import BRAND_LABEL
+    from app.infra.storage import db, repo
+
+    now = datetime.now()  # 저장된 시각과 같은 기준(시간대 없는 한국 시각)
+    typer.echo(f"DB: {db.backend()}   기준 시각: {now:%Y-%m-%d %H:%M} KST")
+
+    sources = repo.source_freshness()
+    stale: list[str] = []
+    typer.echo("\n[수집]")
+    if not sources:
+        typer.echo("  수집된 항목이 없습니다")
+    for row in sources:
+        hours = (now - datetime.fromisoformat(row["last_collected_at"])).total_seconds() / 3600
+        is_stale = hours > STALE_HOURS
+        if is_stale:
+            stale.append(f"{row['brand']}/{row['source']}")
+        label = BRAND_LABEL.get(row["brand"], row["brand"])
+        typer.echo(f"  {'멈춤' if is_stale else '정상'}  {label} · {row['source']} ({row['source_type']}): "
+                   f"{row['items']:,}건, 마지막 수집 {_age_text(hours)}")
+
+    pending = repo.pending_urgent()
+    typer.echo(f"\n[분류] 미분류 이벤트 {repo.unclassified_count():,}건, 발송 대기 중인 긴급 알림 {len(pending)}건")
+
+    typer.echo("\n[주간 리포트]")
+    reports = repo.report_status()
+    if not reports:
+        typer.echo("  저장된 리포트가 없습니다")
+    for row in reports:
+        if row["sent_at"]:
+            missing = [c for c in CHANNELS if c not in row["channels"]]
+            state = "발송 완료" if not missing else f"일부 발송 (미발송: {', '.join(missing)})"
+        else:
+            state = "미발송 (초안)"
+        typer.echo(f"  {row['week']}  {state}")
+
+    if stale:
+        typer.echo(f"\n{STALE_HOURS}시간 넘게 수집이 없는 소스: {', '.join(stale)}", err=True)
+        if strict:
+            raise typer.Exit(1)
+
+
+@cli.command()
+def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 메일로 확인 메시지를 실제로 보낸다")) -> None:
+    """설정 점검: 무엇이 빠졌고 어떤 기능이 그 때문에 안 되는지 알려준다. 비밀값은 출력하지 않는다."""
+    from app.core.config import env
+    from app.infra.notify import email, slack
+    from app.infra.storage import db
+
+    failed = 0
+
+    def line(level: str, name: str, detail: str) -> None:
+        nonlocal failed
+        if level == "실패":
+            failed += 1
+        typer.echo(f"  [{level}] {name}: {detail}", err=level == "실패")
+
+    def need(keys: list[str], name: str, purpose: str, level: str = "실패") -> None:
+        missing = [k for k in keys if not (env(k) or "").strip()]
+        if missing:
+            line(level, name, f"{', '.join(missing)} 없음 — {purpose}")
+        else:
+            line("정상", name, "설정됨")
+
+    typer.echo("[저장소]")
+    try:
+        db.ping()
+        line("정상", "DB", f"{db.backend()} 연결됨")
+        if db.backend() == "sqlite":
+            line("참고", "DB", "SQLite 파일 사용 중 — GitHub Actions 에서는 DATABASE_URL(PostgreSQL)이 필요합니다")
+    except Exception as e:
+        line("실패", "DB", slack.describe_error(e))
+
+    typer.echo("[분석]")
+    need(["ANTHROPIC_API_KEY"], "LLM", "classify·report 가 실패합니다")
+
+    typer.echo("[알림]")
+    for key, purpose, level in ((slack.REPORT_WEBHOOK_ENV, "주간 리포트·긴급 알림이 슬랙으로 나가지 않습니다", "실패"),
+                                ("SLACK_WEBHOOK_OPS", "운영 경고가 콘솔에만 남습니다", "경고")):
+        problem = slack.webhook_problem(key)
+        line(level if problem else "정상", key, f"{problem} — {purpose}" if problem else "형식 확인됨")
+    missing_mail = email.missing_settings()
+    if missing_mail:
+        line("실패", "메일", f"{', '.join(missing_mail)} 없음 — 주간 리포트가 메일로 나가지 않습니다")
+    else:
+        line("정상", "메일", "설정됨")
+    if not (env("REPORT_URL") or "").strip():
+        line("참고", "REPORT_URL", "없음 — 슬랙 메시지에 \"전체 리포트 보기\" 버튼이 빠집니다")
+
+    typer.echo("[수집 API]")
+    need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 뉴스", "네이버 뉴스 수집이 실패합니다", "경고")
+    need(["YOUTUBE_API_KEY"], "유튜브", "유튜브 수집이 실패합니다", "경고")
+    need(["IG_ACCESS_TOKEN", "IG_BUSINESS_ACCOUNT_ID"], "인스타그램", "인스타그램 수집이 실패합니다", "경고")
+
+    typer.echo("[시간대]")
+    offset = datetime.now().astimezone().utcoffset()
+    if offset == timedelta(hours=9):
+        line("정상", "시간대", "한국 시간")
+    else:
+        line("실패", "시간대", "한국 시간이 아닙니다 — 주차 경계가 어긋납니다. PC 시간대를 서울로 맞추세요")
+
+    if send_test:
+        typer.echo("[확인 메시지 발송]")
+        for name, send in (("슬랙 운영 채널", lambda: slack.send_test("SLACK_WEBHOOK_OPS")),
+                           ("메일", email.send_test)):
+            try:
+                send()
+                line("정상", name, "발송됨 — 받은 쪽에서 확인하세요")
+            except Exception as e:
+                line("실패", name, slack.describe_error(e))
+
+    if failed:
+        typer.echo(f"\n실패 {failed}건. 위 항목을 채운 뒤 다시 실행하세요", err=True)
+        raise typer.Exit(1)
+    typer.echo("\n필수 설정이 모두 갖춰졌습니다")
 
 
 if __name__ == "__main__":

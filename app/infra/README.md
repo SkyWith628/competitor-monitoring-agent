@@ -44,6 +44,17 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 | `python -m app report [--week 2026-W47] [--dry-run] [--force]` | 리포트 생성 → `data/report-<주차>.html`·`.md` 저장 → 슬랙·메일 발송. 주차 기본값은 한국 시간 기준 지난주. 한 채널만 실패했으면 같은 명령을 다시 실행해 그 채널만 같은 내용으로 재발송한다. 이미 다 나간 주차는 `--force`가 있어야 새로 만들어 다시 보낸다 |
 | `python -m app dashboard` | `data/dashboard.html` 생성 |
 | `python -m app prune [--weeks 8]` | 오래된 스냅샷 삭제 |
+| `python -m app status [--strict]` | 수집·분류·발송 현황. 소스별 마지막 수집 시각, 미분류 건수, 대기 중인 긴급 알림, 최근 리포트의 발송 여부. `--strict`면 36시간 넘게 멈춘 소스가 있을 때 종료 코드 1 |
+| `python -m app doctor [--send-test]` | 설정 점검. 빠진 키와 그 때문에 안 되는 기능을 알려준다(값은 출력하지 않음). `--send-test`면 운영 경고 채널과 메일로 확인 메시지를 실제로 보낸다 |
+
+## 처음 설정할 때
+
+```bash
+python -m app doctor              # 무엇이 빠졌는지 확인
+python -m app doctor --send-test  # 슬랙 운영 채널과 메일이 실제로 도착하는지 확인
+python -m app report --dry-run    # 발송 없이 리포트 파일만 만들어 보기
+python -m app status              # 수집이 살아 있는지 확인
+```
 
 ## 운영 경고 (`SLACK_WEBHOOK_OPS` → `#monitor-ops`)
 

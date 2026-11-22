@@ -523,3 +523,160 @@ def test_cli_refuses_to_fall_back_to_sqlite_when_database_required(monkeypatch, 
     assert result.exit_code == 1 and called == []
     assert "DATABASE_URL" in result.output
     assert len(alerts) == 1 and "실행 중단" in alerts[0]
+
+
+# ---------- status ----------
+@pytest.fixture
+def status_env(monkeypatch):
+    """운영 상태 조회 함수를 가짜로 바꾼다. 기본: 방금 수집된 소스 하나, 밀린 일 없음."""
+    from app.infra.storage import db
+
+    state = types.SimpleNamespace(sources=[], unclassified=0, pending=[], reports=[])
+    monkeypatch.setattr(db, "backend", lambda: "sqlite")
+    monkeypatch.setattr(repo, "source_freshness", lambda: state.sources)
+    monkeypatch.setattr(repo, "unclassified_count", lambda: state.unclassified)
+    monkeypatch.setattr(repo, "pending_urgent", lambda days=7: state.pending)
+    monkeypatch.setattr(repo, "report_status", lambda limit=8: state.reports)
+    return state
+
+
+def _source(brand: str, source: str, hours_ago: float, items: int = 1200) -> dict:
+    from datetime import timedelta
+
+    stamp = (datetime.now() - timedelta(hours=hours_ago)).isoformat()
+    return {"brand": brand, "source": source, "source_type": "site_product", "items": items,
+            "last_collected_at": stamp}
+
+
+def test_status_on_empty_database(status_env):
+    result = runner.invoke(cli, ["status", "--strict"])
+    assert result.exit_code == 0, result.output
+    assert "수집된 항목이 없습니다" in result.output and "저장된 리포트가 없습니다" in result.output
+
+
+def test_status_shows_sources_backlog_and_reports(status_env):
+    status_env.sources = [_source("spao", "spao.com", 3), _source("uniqlo", "uniqlo.com", 60)]
+    status_env.unclassified, status_env.pending = 12, [_event(1, importance=5)]
+    status_env.reports = [
+        {"week": "2026-W47", "sent_at": None, "channels": []},
+        {"week": "2026-W46", "sent_at": "2026-11-16T08:00:00+09:00", "channels": ["slack"]},
+        {"week": "2026-W45", "sent_at": "2026-11-09T08:00:00+09:00", "channels": ["email", "slack"]},
+    ]
+    result = runner.invoke(cli, ["status"])
+    assert result.exit_code == 0, result.output  # --strict 가 없으면 보여주기만 한다
+    out = result.output
+    assert "정상  스파오 · spao.com (site_product): 1,200건, 마지막 수집 3시간 전" in out
+    assert "멈춤  유니클로 · uniqlo.com" in out and "2일 전" in out
+    assert "미분류 이벤트 12건" in out and "긴급 알림 1건" in out
+    assert "2026-W47  미발송 (초안)" in out
+    assert "2026-W46  일부 발송 (미발송: email)" in out
+    assert "2026-W45  발송 완료" in out
+    assert "36시간 넘게 수집이 없는 소스: uniqlo/uniqlo.com" in out
+
+
+def test_status_strict_fails_when_a_source_is_stale(status_env):
+    status_env.sources = [_source("uniqlo", "uniqlo.com", 60)]
+    assert runner.invoke(cli, ["status", "--strict"]).exit_code == 1
+    status_env.sources = [_source("uniqlo", "uniqlo.com", 30)]
+    assert runner.invoke(cli, ["status", "--strict"]).exit_code == 0
+
+
+# ---------- doctor ----------
+ALL_SETTINGS = {
+    "ANTHROPIC_API_KEY": "sk-secret-value", "SLACK_WEBHOOK_REPORT": "https://hooks.slack.com/services/T/B/report",
+    "SLACK_WEBHOOK_OPS": "https://hooks.slack.com/services/T/B/ops", "SMTP_USER": "bot@example.com",
+    "SMTP_PASSWORD": "smtp-secret", "MAIL_TO": "team@example.com", "REPORT_URL": "https://example.com/r",
+    "NAVER_CLIENT_ID": "id", "NAVER_CLIENT_SECRET": "naver-secret", "YOUTUBE_API_KEY": "yt-secret",
+    "IG_ACCESS_TOKEN": "ig-secret", "IG_BUSINESS_ACCOUNT_ID": "123",
+}
+
+
+@pytest.fixture
+def doctor_env(monkeypatch):
+    """모든 설정이 채워진 상태에서 시작한다. DB·웹훅·메일 점검은 가짜."""
+    from app.infra.storage import db
+
+    state = types.SimpleNamespace(tests=[], ping_error=None, slack_error=None)
+
+    def ping():
+        if state.ping_error:
+            raise state.ping_error
+
+    def webhook_problem(key):
+        import os
+
+        return None if os.getenv(key) else f"{key} 가 비어 있습니다"
+
+    def missing_settings():
+        import os
+
+        return [k for k in ("SMTP_USER", "SMTP_PASSWORD", "MAIL_TO") if not os.getenv(k)]
+
+    def send_test(webhook_env="SLACK_WEBHOOK_OPS"):
+        if state.slack_error:
+            raise state.slack_error
+        state.tests.append(webhook_env)
+
+    for key, value in ALL_SETTINGS.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(db, "ping", ping)
+    monkeypatch.setattr(db, "backend", lambda: "postgresql")
+    monkeypatch.setattr(slack, "webhook_problem", webhook_problem, raising=False)
+    monkeypatch.setattr(slack, "send_test", send_test, raising=False)
+    monkeypatch.setattr(email, "missing_settings", missing_settings, raising=False)
+    monkeypatch.setattr(email, "send_test", lambda: state.tests.append("email"), raising=False)
+    return state
+
+
+def test_doctor_passes_when_everything_is_set_and_prints_no_secret(doctor_env):
+    result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "필수 설정이 모두 갖춰졌습니다" in result.output and "postgresql 연결됨" in result.output
+    assert doctor_env.tests == []  # --send-test 없이는 아무것도 보내지 않는다
+    for secret in ALL_SETTINGS.values():
+        assert secret not in result.output
+
+
+def test_doctor_lists_every_missing_required_setting_at_once(doctor_env, monkeypatch):
+    for key in ("ANTHROPIC_API_KEY", "SLACK_WEBHOOK_REPORT", "MAIL_TO"):
+        monkeypatch.setenv(key, "")
+    result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 1
+    assert "ANTHROPIC_API_KEY 없음" in result.output and "MAIL_TO 없음" in result.output
+    assert "[실패] SLACK_WEBHOOK_REPORT" in result.output and "실패 3건" in result.output
+
+
+def test_doctor_optional_settings_only_warn(doctor_env, monkeypatch):
+    for key in ("SLACK_WEBHOOK_OPS", "NAVER_CLIENT_ID", "YOUTUBE_API_KEY", "IG_ACCESS_TOKEN", "REPORT_URL"):
+        monkeypatch.setenv(key, "")
+    result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "[경고] SLACK_WEBHOOK_OPS" in result.output and "[경고] 유튜브" in result.output
+    assert "[참고] REPORT_URL" in result.output
+
+
+def test_doctor_reports_database_failure_without_leaking_the_address(doctor_env):
+    doctor_env.ping_error = RuntimeError("connection to postgresql://user:pw123@db.example.com/app failed")
+    result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 1 and "[실패] DB" in result.output
+    assert "pw123" not in result.output and "db.example.com" not in result.output
+
+
+def test_doctor_runs_even_when_required_database_url_is_missing(doctor_env, monkeypatch, alerts):
+    monkeypatch.setenv("REQUIRE_DATABASE_URL", "1")
+    monkeypatch.setenv("DATABASE_URL", "")
+    result = runner.invoke(cli, ["doctor"])
+    assert "[저장소]" in result.output and "[알림]" in result.output  # 중간에 멈추지 않고 전부 점검한다
+    assert alerts == []
+
+
+def test_doctor_send_test_sends_to_ops_channel_and_mail(doctor_env):
+    result = runner.invoke(cli, ["doctor", "--send-test"])
+    assert result.exit_code == 0, result.output
+    assert doctor_env.tests == ["SLACK_WEBHOOK_OPS", "email"]  # 팀이 보는 리포트 채널에는 보내지 않는다
+
+    doctor_env.tests.clear()
+    doctor_env.slack_error = RuntimeError("웹훅 404 https://hooks.slack.com/services/T/B/ops")
+    result = runner.invoke(cli, ["doctor", "--send-test"])
+    assert result.exit_code == 1 and doctor_env.tests == ["email"]  # 슬랙이 실패해도 메일은 시도한다
+    assert "hooks.slack.com" not in result.output
