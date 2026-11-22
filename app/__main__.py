@@ -1,5 +1,7 @@
 """CLI 진입점. 담당: D
 
+모든 명령은 `python -m app <명령>` 으로 실행한다. 자동 실행(.github/workflows)도 같은 명령을 쓴다.
+
   python -m app init-db
   python -m app collect --source site --brand spao     # A
   python -m app collect --source news                  # B (브랜드 생략 시 전체)
@@ -9,6 +11,21 @@
   python -m app dashboard                              # 정적 대시보드 HTML 생성
   python -m app status [--strict]                      # 수집·분류·발송 현황
   python -m app doctor [--send-test]                   # 설정 점검 (키·DB·웹훅·메일)
+
+이 파일이 하는 일과 하지 않는 일
+    - 하는 일: 각 역할의 코드를 순서대로 부르고, 실패를 운영 채널에 알리고, 종료 코드를 정한다.
+    - 하지 않는 일: 수집·변화 감지(A·B), 분류·요약(C)의 내용. 그건 각 폴더의 pipeline / classify /
+      report_builder 가 한다. 여기서는 그 함수들을 호출만 한다.
+
+A·B·C가 알아둘 약속
+    - 수집 파이프라인(run, run_news, run_sns)은 ChangeEvent 리스트를 돌려주고, 실패하면 예외를 던진다.
+      예외는 여기서 잡아 운영 경고로 보내고 다음 브랜드로 넘어간다. 직접 잡아서 삼키지 말 것.
+    - 아직 구현 전이면 NotImplementedError 를 던진다. 실패로 치지 않고 "아직 구현되지 않음"만 출력한다.
+    - 종료 코드: 0 = 정상, 1 = 일부라도 실패(Actions 에서 빨갛게 보인다), 2 = 명령 인자가 잘못됨.
+
+import 를 함수 안에서 하는 이유
+    명령 하나를 실행할 때 다른 역할의 모듈까지 전부 불러오지 않기 위해서다. 예를 들어 playwright 가
+    설치되지 않은 환경에서도 `report` 는 돌아야 한다. 테스트에서 일부만 가짜로 바꾸기도 쉽다.
 """
 from __future__ import annotations
 
@@ -34,7 +51,12 @@ WEEK_RE = re.compile(r"(\d{4})-W(\d{2})")
 
 
 def last_week(now: datetime | None = None) -> str:
-    """한국 시간 기준 지난주의 ISO 주차. (GitHub Actions 러너는 UTC라 date.today()를 쓰면 한 주 밀린다)"""
+    """한국 시간 기준 지난주의 ISO 주차 문자열. 예: 월요일 2026-11-23 에 부르면 "2026-W47".
+
+    weekly 워크플로는 일요일 23:00 UTC(= 월요일 08:00 KST)에 돈다. 러너의 날짜(UTC)로 계산하면 아직
+    일요일이라 "지난주"가 한 주 더 밀리므로, 반드시 한국 시간으로 날짜를 구한다.
+    now 는 테스트에서 시각을 고정할 때만 넘긴다.
+    """
     day = (now or datetime.now(KST)).astimezone(KST).date() - timedelta(days=7)
     y, w, _ = day.isocalendar()
     return f"{y}-W{w:02d}"
@@ -59,7 +81,12 @@ def prev_week(week: str) -> str:
 
 @cli.callback()
 def _setup(ctx: typer.Context) -> None:
-    """모든 명령 실행 전에: 한국 시간 고정, DB 설정 확인."""
+    """모든 명령 실행 전에 한 번 도는 준비 단계.
+
+    1. 시간대를 한국 시간으로 고정한다 (수집·감지 시각과 주차 경계의 기준).
+    2. 운영 워크플로(REQUIRE_DATABASE_URL=1)인데 DATABASE_URL 이 비어 있으면 여기서 멈춘다.
+       그대로 두면 러너의 임시 SQLite 에 써서, 실행이 끝날 때 데이터가 사라진다.
+    """
     from app.infra.notify import slack
     from app.infra.storage import db
     from app.infra.timeutil import use_korean_time
@@ -77,6 +104,7 @@ def _setup(ctx: typer.Context) -> None:
 
 @cli.command("init-db")
 def init_db() -> None:
+    """테이블을 만든다. 첫 연결 때 자동으로도 만들어지므로 꼭 실행할 필요는 없다."""
     from app.infra.storage.db import init_db as _init
 
     _init()
@@ -86,6 +114,11 @@ def init_db() -> None:
 @cli.command()
 def collect(source: str = typer.Option(..., help="site | news | sns"),
             brand: Brand | None = typer.Option(None)) -> None:
+    """한 종류의 소스를 수집한다. --brand 를 생략하면 4개 브랜드를 차례로 돈다.
+
+    브랜드마다: 파이프라인 실행 → 성공하면 "정말 뭔가 수집됐는지" 0건 검사.
+    한 브랜드가 실패해도 나머지는 계속하고, 실패가 하나라도 있었으면 마지막에 종료 코드 1.
+    """
     from app.infra.notify import slack
     from app.infra.storage import repo
 
@@ -94,7 +127,9 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
     brands = [brand] if brand else list(Brand)
     failed: list[str] = []
     for b in brands:
-        since = datetime.now()  # collected_at 과 같은 기준(naive 로컬 시각)
+        # 0건 검사의 기준 시각. 이 시각 이후에 저장된 항목 = 이번 실행에서 수집된 항목.
+        # 모델이 collected_at 을 datetime.now() 로 찍으므로 같은 방식(시간대 없는 시각)으로 잡는다.
+        since = datetime.now()
         try:
             if source == "site":
                 from app.site_monitor.pipeline import run
@@ -114,6 +149,7 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
             slack.send_ops_alert(f"수집 실패 {source}/{b.value}: {slack.describe_error(e)}")
             typer.echo(f"[{source}/{b.value}] 실패: {slack.describe_error(e)}", err=True)
             continue
+        # --- 여기부터 0건 검사: 예외 없이 끝났어도 아무것도 못 가져왔다면 셀렉터·API가 바뀐 것이다 ---
         if source not in ZERO_CHECK:
             continue
         try:  # 파이프라인은 이벤트만 돌려주므로, 이번 실행에서 저장된 항목 수는 DB에서 센다
@@ -138,6 +174,13 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
 
 @cli.command()
 def classify() -> None:
+    """미분류 이벤트를 LLM으로 분류하고, 중요도 5 이벤트는 긴급 알림으로 보낸다.
+
+    순서: 미분류 조회 → C의 classify() → 결과 저장 → 긴급 알림.
+    분류가 실패하면 아무것도 저장하지 않으므로 다음 실행에서 같은 이벤트를 다시 시도한다.
+    긴급 알림은 "보냈다"는 기록(urgent_alerts)이 없는 것만 보내므로, 실패한 알림은 다음 실행에서
+    다시 나가고 성공한 알림은 중복되지 않는다.
+    """
     from app.analysis.classify import classify as _classify
     from app.core.config import env
     from app.infra.notify import slack
@@ -177,6 +220,16 @@ def classify() -> None:
 def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주)"),
            dry_run: bool = typer.Option(False, help="발송하지 않고 HTML·Markdown만 저장"),
            force: bool = typer.Option(False, help="이미 발송한 주차도 새로 만들어 모든 채널에 다시 보낸다")) -> None:
+    """주간 리포트를 만들어 파일로 저장하고 슬랙·메일로 보낸다.
+
+    순서: C의 build() → HTML·Markdown 렌더 → data/report-<주차>.* 저장 → 채널별 발송 → 발송 기록.
+
+    다시 실행해도 안전하다:
+      - 전부 나간 주차      → 아무것도 하지 않는다 (다시 보내려면 --force)
+      - 일부만 나간 주차    → 처음 나간 내용 그대로(LLM 재생성 없음) 못 나간 부분만 보낸다
+      - 아무것도 안 나간 주차 → 새로 만들어 보낸다
+    --dry-run 은 파일만 만들고 보내지 않으며, 이미 발송된 기록을 덮어쓰지 않는다.
+    """
     from app.analysis.report_builder import build
     from app.core.config import ROOT, env
     from app.infra.notify import email, render, slack
@@ -263,6 +316,7 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
 
 @cli.command()
 def prune(weeks: int = typer.Option(8, min=1, help="보관 기간(주). 이보다 오래된 스냅샷을 지운다")) -> None:
+    """오래된 수집 이력(snapshots)을 지운다. 항목의 최신 상태와 이벤트·리포트는 지우지 않는다."""
     from app.infra.storage import repo
 
     typer.echo(f"스냅샷 {repo.prune_snapshots(weeks=weeks)}건 삭제 ({weeks}주 초과분)")
@@ -270,12 +324,14 @@ def prune(weeks: int = typer.Option(8, min=1, help="보관 기간(주). 이보�
 
 @cli.command()
 def dashboard() -> None:
+    """DB 내용을 data/dashboard.html 한 파일로 만든다. 브라우저로 바로 열어 볼 수 있다."""
     from app.infra import dashboard as _dashboard
 
     typer.echo(f"대시보드 생성: {_dashboard.build()}")
 
 
 def _age_text(hours: float) -> str:
+    """경과 시간을 읽기 쉬운 말로: 0.5 → "방금", 5 → "5시간 전", 60 → "2일 전"."""
     if hours < 1:
         return "방금"
     return f"{int(hours)}시간 전" if hours < 48 else f"{int(hours // 24)}일 전"
