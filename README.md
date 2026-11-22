@@ -48,3 +48,6 @@ pytest -q
 | `python -m app collect --source news` / `--source sns` | B |
 | `python -m app classify` | C |
 | `python -m app report --week 2026-W47 --dry-run` | C + D |
+| `python -m app dashboard` / `python -m app prune` | D |
+
+운영 설정(Secrets, 운영 DB)과 운영 경고의 뜻은 [app/infra/README.md](app/infra/README.md) 참고.

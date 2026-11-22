@@ -1,18 +1,84 @@
 # 🅳 infra — 플랫폼·저장소·알림·통합 (담당: D, PM 겸)
 
-모든 역할의 코드가 **올라타는 바닥**과 **최종 출구**를 맡는다. 1주차 1~2일차에 가장 먼저 뼈대를 깔아 A·B·C가 바로 붙을 수 있게 한다.
+모든 역할의 코드가 **올라타는 바닥**과 **최종 출구**를 맡는다.
 
 | 파일 | 하는 일 |
 |---|---|
-| `storage/db.py` | DB 연결·테이블 생성 (SQLite → 운영 시 PostgreSQL) |
+| `storage/db.py` | DB 연결·테이블 생성. `DATABASE_URL`이 있으면 PostgreSQL, 없으면 SQLite(`DB_PATH`) |
 | `storage/repo.py` | 저장/조회 함수 — **A·B·C는 DB를 직접 만지지 않고 이 함수만 호출** |
-| `notify/render.py` | `WeeklyReport` → Markdown / HTML / 슬랙 Block Kit |
+| `notify/render.py` | `WeeklyReport` → HTML / Markdown / 슬랙 Block Kit, 긴급 알림 블록 |
 | `notify/slack.py` | Slack Incoming Webhook 발송 (리포트 채널 / 운영 경고 채널) |
-| `notify/email.py` | SMTP HTML 메일 발송 |
+| `notify/email.py` | SMTP 메일 발송 (텍스트 + HTML) |
 | `notify/templates/` | `weekly.html.j2`, `weekly.md.j2` |
+| `dashboard/` | DB 내용을 단일 HTML 대시보드로 생성 |
 | `../__main__.py` | CLI 진입점 (`python -m app ...`) |
 | `../../.github/workflows/` | daily / weekly / ci 자동 실행 |
 
 - repo 함수 시그니처를 바꿀 때는 호출하는 쪽(A·B·C)에 먼저 공유
 - 비밀값은 `.env`(로컬)·GitHub Secrets(운영)에만 둔다
-- 운영 경고(수집 0건, 예외, LLM 실패)는 `#monitor-ops` 채널로
+
+## A·B·C가 쓰는 repo 함수
+
+| 함수 | 쓰는 쪽 | 설명 |
+|---|---|---|
+| `save_items(items)` | A·B | 최신 상태 갱신 + 일자별 스냅샷 추가 |
+| `latest_items(brand, source)` | A | `external_id → RawItem` (전일 대비 diff용) |
+| `exists(item)` | B | 이미 저장된 항목인지 |
+| `recent_posts(brand, source, limit=30)` | B | 최근 SNS 게시물 (반응 급증 기준선) |
+| `save_events(events)` | A·B | 저장하면서 `event.id`를 채운다 |
+| `unclassified_events()` / `update_events(events)` | C | 미분류 이벤트 조회 / 분류 결과 저장 |
+| `events_of_week(week)` | C | `"2026-W47"` → 월~일 이벤트 |
+| `last_report_tldr(week)` | C | 직전 리포트의 한 줄 요약 |
+| `save_llm_call(model, input_tokens, output_tokens)` | C | 토큰 사용량 기록 (대시보드에 표시) |
+
+D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item_counts`, `llm_usage`,
+`count_items_since`, `prune_snapshots`.
+
+## 명령
+
+| 명령 | 하는 일 |
+|---|---|
+| `python -m app init-db` | 테이블 생성 (생략해도 첫 연결 때 자동 생성) |
+| `python -m app collect --source site\|news\|sns [--brand spao]` | 수집. 브랜드 하나가 실패해도 나머지는 계속하고, 실패가 있으면 종료 코드 1 |
+| `python -m app classify` | 미분류 이벤트 분류. 중요도 5는 리포트 채널로 긴급 알림 |
+| `python -m app report [--week 2026-W47] [--dry-run]` | 리포트 생성 → `data/report-<주차>.html`·`.md` 저장 → 슬랙·메일 발송. 주차 기본값은 한국 시간 기준 지난주 |
+| `python -m app dashboard` | `data/dashboard.html` 생성 |
+| `python -m app prune [--weeks 8]` | 오래된 스냅샷 삭제 |
+
+## 운영 경고 (`SLACK_WEBHOOK_OPS` → `#monitor-ops`)
+
+| 경고 | 뜻 |
+|---|---|
+| `수집 실패 <소스>/<브랜드>` | 수집기가 예외를 던짐 |
+| `파싱 0건 <소스>/<브랜드>` | 예외는 없는데 저장된 항목이 0건 (site·sns만 검사. news는 새 기사만 저장하므로 0건이 정상) |
+| `LLM 분류 실패` | 분류 호출 실패. 이벤트는 미분류로 남아 다음 실행에서 다시 시도 |
+| `주간 리포트 생성 실패` / `발송 실패 <주차>/<채널>` | 한 채널이 실패해도 다른 채널은 발송한다 |
+
+`SLACK_WEBHOOK_OPS`가 없으면 경고는 보내지 않고 콘솔에만 남는다.
+
+## 운영 설정 (GitHub → Settings → Secrets and variables → Actions)
+
+| 이름 | 종류 | 필수 | 용도 |
+|---|---|---|---|
+| `DATABASE_URL` | Secret | **필수** | PostgreSQL 주소 (`postgresql://user:pw@host:5432/db`). 없으면 러너의 SQLite를 쓰는데 실행이 끝나면 사라져서 데이터가 쌓이지 않는다 |
+| `ANTHROPIC_API_KEY` | Secret | 필수 | 분류·리포트 LLM |
+| `SLACK_WEBHOOK_REPORT` | Secret | 필수 | 주간 리포트·긴급 알림 채널 |
+| `SLACK_WEBHOOK_OPS` | Secret | 권장 | 운영 경고 채널 |
+| `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_TO` | Secret | 필수 | 메일 발송 (`MAIL_TO`는 쉼표로 여러 명). Gmail은 앱 비밀번호 사용 |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `IG_ACCESS_TOKEN`, `IG_BUSINESS_ACCOUNT_ID`, `YOUTUBE_API_KEY` | Secret | B 수집기용 | 뉴스·SNS API |
+| `SMTP_HOST`, `SMTP_PORT` | Variable | 선택 | 기본 `smtp.gmail.com` / `587` |
+| `REPORT_URL` | Variable | 선택 | 슬랙 "전체 리포트 보기" 버튼 링크 |
+
+## 자동 실행
+
+- **daily-collect** (매일 06:00 KST): site → news → sns 수집 → 분류 → 스냅샷 정리. 한 단계가 실패해도 다음 단계는 실행된다.
+- **weekly-report** (매주 월 08:00 KST): 리포트 발송 → 대시보드 생성. 리포트와 대시보드 파일은 실행 결과의 Artifacts에서 내려받는다.
+- 둘 다 Actions 탭에서 **Run workflow**로 수동 실행할 수 있다.
+
+## 로컬에서 PostgreSQL로 테스트
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres@localhost:5432/postgres pytest -q tests/infra
+```
+
+`TEST_DATABASE_URL`이 없으면 테스트는 임시 SQLite 파일을 쓴다. 지정한 DB의 테이블은 테스트마다 비워지므로 운영 DB를 넣지 말 것.
