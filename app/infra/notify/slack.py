@@ -1,20 +1,91 @@
 """Slack Incoming Webhook 발송. 담당: D"""
 from __future__ import annotations
 
+import re
+import sys
+from collections.abc import Callable
+
 import httpx
 
 from app.core.config import env
+from app.core.models import ChangeEvent, WeeklyReport
+from app.infra.notify import render
+
+REPORT_WEBHOOK_ENV = "SLACK_WEBHOOK_REPORT"
+_URL = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s'\"<>]+")
+
+
+def describe_error(e: BaseException) -> str:
+    """경고·로그에 써도 안전한 오류 설명.
+
+    예외 메시지에는 요청 주소가 통째로 들어가는 경우가 많다(httpx). 웹훅 주소, `?key=` API 키,
+    비밀번호가 든 DB 주소는 그 자체가 비밀값이므로 주소는 모두 가린다.
+    """
+    name = type(e).__name__
+    response = getattr(e, "response", None)
+    if isinstance(e, httpx.HTTPStatusError) and response is not None:
+        return f"{name} (HTTP {response.status_code})"
+    message = _URL.sub("[주소 가림]", str(e)).strip()
+    return f"{name}: {message}" if message else name
 
 
 def send_blocks(blocks: list[dict], fallback_text: str, webhook_env: str = "SLACK_WEBHOOK_REPORT") -> None:
-    url = env(webhook_env)
+    url = (env(webhook_env) or "").strip()
     if not url:
         raise RuntimeError(f"{webhook_env} 가 .env 에 없습니다")
     httpx.post(url, json={"text": fallback_text, "blocks": blocks}, timeout=10).raise_for_status()
 
 
+def send_report(report: WeeklyReport, full_report_url: str | None = None, start: int = 0,
+                on_sent: Callable[[int], None] | None = None) -> None:
+    """주간 리포트 발송: 본 메시지(0번) → 브랜드별 후속 메시지(1번~).
+
+    Incoming Webhook은 스레드 답글을 달 수 없어서, 후속 메시지는 같은 채널에 연달아 보낸다.
+    메시지가 하나 나갈 때마다 on_sent(번호)를 부른다. 중간에 실패해 다시 보낼 때는 이미 나간 개수를
+    start 로 넘기면 그 다음 메시지부터 보낸다(본 메시지 중복 방지).
+    """
+    messages = [(render.to_slack_blocks(report, full_report_url),
+                 f"경쟁사 주간 리포트 {report.week}: {report.tldr}")]
+    messages += [(blocks, f"경쟁사 주간 리포트 {report.week} 브랜드별 요약")
+                 for blocks in render.to_slack_brand_blocks(report)]
+    for i, (blocks, fallback) in enumerate(messages):
+        if i < start:
+            continue
+        send_blocks(blocks, fallback_text=fallback)
+        if on_sent:
+            on_sent(i)
+
+
+def send_urgent(events: list[ChangeEvent]) -> list[ChangeEvent]:
+    """긴급 알림을 이벤트마다 한 건씩 리포트 채널로 보낸다. **실제로 나간 이벤트**를 돌려준다.
+
+    한 건이 실패해도 나머지는 계속 보낸다. 돌려준 목록이 입력보다 짧으면 실패한 건이 있다는 뜻이므로
+    호출한 쪽이 발송 기록·재시도·운영 경고를 처리한다. 웹훅이 설정되지 않았으면 아무것도 보내지 않는다.
+    """
+    if not env(REPORT_WEBHOOK_ENV):
+        return []
+    sent: list[ChangeEvent] = []
+    for e in events:
+        try:
+            send_blocks(render.to_urgent_blocks(e),
+                        fallback_text=f"[긴급] {render.BRAND_LABEL.get(e.brand.value, e.brand.value)} {e.title}",
+                        webhook_env=REPORT_WEBHOOK_ENV)
+            sent.append(e)
+        except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지 알림을 막으면 안 된다
+            print(f"긴급 알림 발송 실패 (event id={e.id}): {describe_error(exc)}", file=sys.stderr)
+    return sent
+
+
 def send_ops_alert(message: str) -> None:
-    """수집 실패·0건·LLM 오류 등 운영 경고 → #monitor-ops"""
-    url = env("SLACK_WEBHOOK_OPS")
-    if url:
-        httpx.post(url, json={"text": f":warning: {message}"}, timeout=10)
+    """수집 실패·0건·LLM 오류 등 운영 경고 → #monitor-ops
+
+    경고 발송이 실패해도 본 작업을 멈추지 않는다. 어떤 예외도 밖으로 내보내지 않고(잘못된 웹훅 주소
+    포함) stderr에만 남긴다. 슬랙이 4xx·5xx로 거절한 경우도 실패로 기록한다.
+    """
+    url = (env("SLACK_WEBHOOK_OPS") or "").strip()  # Secret 끝에 줄바꿈이 섞여 들어오는 경우가 있다
+    if not url:
+        return
+    try:
+        httpx.post(url, json={"text": f":warning: {message}"}, timeout=10).raise_for_status()
+    except Exception as e:  # noqa: BLE001 — 경고 발송 실패가 본 작업을 멈추면 안 된다
+        print(f"운영 경고 발송 실패: {describe_error(e)}", file=sys.stderr)
