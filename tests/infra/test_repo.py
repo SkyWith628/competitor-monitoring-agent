@@ -231,3 +231,71 @@ def test_silent_sources_finds_a_source_that_stopped_producing(tmp_db):
     assert repo.silent_sources(Brand.SPAO, [SourceType.SITE_PRODUCT], since) == ["spao.com"]
     assert repo.silent_sources(Brand.UNIQLO, [SourceType.SNS_POST], since) == []  # 수집한 적 없는 소스는 대상 아님
     assert repo.silent_sources(Brand.SPAO, [], since) == []
+
+
+def test_source_freshness_lists_each_source_with_latest_time(tmp_db):
+    assert repo.source_freshness() == []
+    old, new = datetime(2026, 11, 20, 6, 0), datetime(2026, 11, 22, 6, 0)
+    sns = {"source_type": SourceType.SNS_POST}
+    repo.save_items([_item(ext="p1", collected_at=old), _item(ext="p2", collected_at=new),
+                     _item(ext="y1", source="youtube", collected_at=old, **sns),
+                     _item(ext="u1", brand=Brand.UNIQLO, source="uniqlo.com", collected_at=new)])
+    assert repo.source_freshness() == [
+        {"brand": "spao", "source": "spao.com", "source_type": "site_product", "items": 2,
+         "last_collected_at": "2026-11-22T06:00:00"},
+        {"brand": "spao", "source": "youtube", "source_type": "sns_post", "items": 1,
+         "last_collected_at": "2026-11-20T06:00:00"},
+        {"brand": "uniqlo", "source": "uniqlo.com", "source_type": "site_product", "items": 1,
+         "last_collected_at": "2026-11-22T06:00:00"},
+    ]
+
+
+def test_unclassified_count_matches_unclassified_events(tmp_db):
+    assert repo.unclassified_count() == 0
+    events = [_event(17), _event(18), _event(19)]
+    repo.save_events(events)
+    assert repo.unclassified_count() == 3
+    events[0].category = Category.PRICING
+    repo.update_events([events[0]])
+    assert repo.unclassified_count() == len(repo.unclassified_events()) == 2
+
+
+def test_report_status_shows_sent_state_and_whole_channels_only(tmp_db):
+    assert repo.report_status() == []
+    repo.save_report(_report("2026-W46", "발송 완료"))
+    repo.mark_report_sent("2026-W46", "slack#0")
+    repo.mark_report_sent("2026-W46", "slack")
+    repo.mark_report_sent("2026-W46", "email")
+    repo.save_report(_report("2026-W47", "초안"), sent=False)
+    repo.mark_report_sent("2026-W47", "slack#0")  # 본 메시지만 나가고 멈춘 상태
+    status = repo.report_status()
+    assert [s["week"] for s in status] == ["2026-W47", "2026-W46"]
+    assert status[0]["sent_at"] is None and status[0]["channels"] == []
+    assert status[1]["sent_at"] is not None and status[1]["channels"] == ["email", "slack"]
+    assert len(repo.report_status(limit=1)) == 1
+
+
+def test_indexes_are_added_to_a_database_created_before_them(tmp_db):
+    """인덱스가 없던 시절에 만들어진 DB 파일에도 다음 연결 때 인덱스가 생긴다."""
+    from sqlalchemy import inspect
+
+    def index_names():
+        insp = inspect(db.engine())
+        return {i["name"] for t in ("raw_items", "snapshots", "change_events", "llm_calls")
+                for i in insp.get_indexes(t)}
+
+    expected = {i.name for i in db.INDEXES}
+    assert expected <= index_names()
+    with db.connect() as conn:
+        for name in expected:
+            conn.execute(f"DROP INDEX {name}")
+    assert not expected & index_names()
+    db.init_db()
+    assert expected <= index_names()
+
+
+def test_backend_and_ping(tmp_db, monkeypatch):
+    import os
+
+    assert db.backend() == ("postgresql" if os.getenv("TEST_DATABASE_URL") else "sqlite")
+    db.ping()

@@ -123,6 +123,23 @@ def silent_sources(brand: Brand, source_types: list[SourceType], since: datetime
     return [source for source, latest in rows if latest < cutoff]
 
 
+def source_freshness() -> list[dict]:
+    """소스별 수집 현황: [{"brand", "source", "source_type", "items", "last_collected_at"}].
+
+    last_collected_at 은 저장된 그대로의 ISO 문자열(시간대 없는 한국 시각). 브랜드·소스 순.
+    "수집이 아직 살아 있는가"를 status 명령과 대시보드가 이 값으로 보여준다.
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            select(raw_items.c.brand, raw_items.c.source, raw_items.c.source_type, func.count(),
+                   func.max(raw_items.c.collected_at))
+            .group_by(raw_items.c.brand, raw_items.c.source, raw_items.c.source_type)
+            .order_by(raw_items.c.brand, raw_items.c.source, raw_items.c.source_type)
+        ).fetchall()
+    return [{"brand": brand, "source": source, "source_type": source_type, "items": int(n),
+             "last_collected_at": latest} for brand, source, source_type, n, latest in rows]
+
+
 def item_counts() -> dict[str, dict[str, int]]:
     """브랜드 → source_type → raw_items 건수 (값은 enum의 value 문자열)."""
     with connect() as conn:
@@ -165,15 +182,28 @@ def update_events(events: list[ChangeEvent]) -> None:
             _set_event_data(conn, e)
 
 
+def _unclassified():
+    """분류 전(category 가 JSON null) 이벤트 조건. data 는 TEXT 라 방언별로 JSON 을 꺼낸다."""
+    from app.infra.storage.db import is_postgres
+
+    category = "data::json ->> 'category'" if is_postgres() else "json_extract(data, '$.category')"
+    return text(f"{category} IS NULL")  # 둘 다 JSON null 을 SQL NULL 로 돌려준다
+
+
 def unclassified_events() -> list[ChangeEvent]:
     with connect() as conn:
-        # data는 TEXT라 방언별로 JSON을 꺼낸다. 둘 다 JSON null을 SQL NULL로 돌려준다.
-        pg = conn.dialect == "postgresql"
-        category = "data::json ->> 'category'" if pg else "json_extract(data, '$.category')"
         rows = conn.execute(
-            select(change_events.c.data).where(text(f"{category} IS NULL")).order_by(change_events.c.id)
+            select(change_events.c.data).where(_unclassified()).order_by(change_events.c.id)
         ).fetchall()
     return [ChangeEvent.model_validate_json(r.data) for r in rows]
+
+
+def unclassified_count() -> int:
+    """분류를 기다리는 이벤트 수 (운영 상태 확인용)."""
+    with connect() as conn:
+        return int(conn.execute(
+            select(func.count()).select_from(change_events).where(_unclassified())
+        ).scalar_one())
 
 
 def events_of_week(week: str) -> list[ChangeEvent]:
@@ -246,6 +276,28 @@ def mark_report_sent(week: str, channel: str) -> None:
     stmt = upsert(report_sends).values(week=week, channel=channel, sent_at=datetime.now(KST).isoformat())
     with connect() as conn:
         conn.execute(stmt.on_conflict_do_nothing(index_elements=["week", "channel"]))
+
+
+def report_status(limit: int = 8) -> list[dict]:
+    """최근 리포트의 발송 현황, 최신 주차부터: [{"week", "sent_at", "channels"}].
+
+    sent_at 이 None 이면 저장만 되고(dry-run·발송 실패) 아직 나가지 않은 리포트다.
+    channels 는 끝까지 나간 채널 이름만 담는다 (슬랙 메시지 단위 기록 "slack#0" 등은 뺀다).
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            select(reports.c.week, reports.c.sent_at).order_by(reports.c.week.desc()).limit(limit)
+        ).fetchall()
+        weeks = [r.week for r in rows]
+        sends = conn.execute(
+            select(report_sends.c.week, report_sends.c.channel).where(report_sends.c.week.in_(weeks))
+        ).fetchall() if weeks else []
+    channels: dict[str, list[str]] = {}
+    for week, channel in sends:
+        if "#" not in channel:
+            channels.setdefault(week, []).append(channel)
+    return [{"week": r.week, "sent_at": r.sent_at, "channels": sorted(channels.get(r.week, []))}
+            for r in rows]
 
 
 def last_report_tldr(week: str) -> str | None:
