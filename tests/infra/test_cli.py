@@ -142,24 +142,35 @@ def test_collect_count_failure_alerts_and_exits_nonzero(monkeypatch, alerts):
 # ---------- classify ----------
 @pytest.fixture
 def classify_env(monkeypatch):
-    """미분류 이벤트 3건 + 가짜 분류기(중요도 5·3·5). 저장·긴급 알림 호출을 기록한다."""
+    """미분류 이벤트 3건 + 가짜 분류기(중요도 5·3·5). 저장·긴급 알림 호출을 기록한다.
+
+    pending_urgent 는 실제처럼 "분류된 중요도 5 중 아직 알림이 안 나간 것"을 돌려준다.
+    """
     from app.analysis import classify as classify_mod
 
-    state = types.SimpleNamespace(pending=[_event(1), _event(2), _event(3)], updated=[], urgent=[])
+    state = types.SimpleNamespace(pending=[_event(1), _event(2), _event(3)], updated=[], urgent=[],
+                                  marked=[], fail_ids=set())
 
     def fake_classify(events):
         for e, importance in zip(events, (5, 3, 5), strict=False):
             e.importance = importance
         return events
 
-    def send_urgent(events):
-        state.urgent.append(events)
-        return len(events)
+    def pending_urgent(days=7):
+        saved = [e for batch in state.updated for e in batch]
+        return [e for e in saved if e.importance == 5 and e.id not in state.marked]
 
+    def send_urgent(events):
+        state.urgent.append([e.id for e in events])
+        return [e for e in events if e.id not in state.fail_ids]
+
+    monkeypatch.setenv("SLACK_WEBHOOK_REPORT", "https://hooks.example/report")
     monkeypatch.setattr(repo, "unclassified_events", lambda: state.pending)
     monkeypatch.setattr(repo, "update_events", state.updated.append)
+    monkeypatch.setattr(repo, "pending_urgent", pending_urgent)
+    monkeypatch.setattr(repo, "mark_urgent_sent", state.marked.extend)
     monkeypatch.setattr(classify_mod, "classify", fake_classify)
-    monkeypatch.setattr(slack, "send_urgent", send_urgent, raising=False)
+    monkeypatch.setattr(slack, "send_urgent", send_urgent)
     return state
 
 
@@ -167,7 +178,7 @@ def test_classify_sends_urgent_only_for_importance_5(classify_env, alerts):
     result = runner.invoke(cli, ["classify"])
     assert result.exit_code == 0, result.output
     assert [e.id for e in classify_env.updated[0]] == [1, 2, 3]
-    assert [[e.id for e in batch] for batch in classify_env.urgent] == [[1, 3]]
+    assert classify_env.urgent == [[1, 3]] and classify_env.marked == [1, 3]
     assert "분류 완료 3건" in result.output and "긴급 알림 2건" in result.output
     assert alerts == []
 
@@ -201,15 +212,26 @@ def test_classify_llm_failure_alerts_and_exits_nonzero(classify_env, monkeypatch
     assert classify_env.updated == [] and classify_env.urgent == []
 
 
-def test_classify_urgent_failure_keeps_classification(classify_env, monkeypatch, alerts):
-    def boom(events):
-        raise RuntimeError("웹훅 없음")
-
-    monkeypatch.setattr(slack, "send_urgent", boom, raising=False)
+def test_classify_failed_urgent_alert_is_reported_and_retried(classify_env, alerts):
+    classify_env.fail_ids = {3}  # 3번 이벤트의 긴급 알림만 실패
     result = runner.invoke(cli, ["classify"])
-    assert result.exit_code == 1
-    assert len(classify_env.updated) == 1  # 분류 결과는 저장된 뒤다
-    assert len(alerts) == 1 and "긴급 알림 발송 실패" in alerts[0]
+    assert result.exit_code == 1  # 조용히 넘어가지 않는다
+    assert classify_env.marked == [1]
+    assert len(alerts) == 1 and "긴급 알림 1건 발송 실패" in alerts[0]
+
+    # 다음 실행: 새로 분류할 것이 없어도 실패했던 3번만 다시 보낸다 (1번은 중복 발송하지 않는다)
+    classify_env.pending, classify_env.fail_ids = [], set()
+    result = runner.invoke(cli, ["classify"])
+    assert result.exit_code == 0, result.output
+    assert classify_env.urgent == [[1, 3], [3]] and classify_env.marked == [1, 3]
+
+
+def test_classify_without_report_webhook_keeps_urgent_pending(classify_env, monkeypatch, alerts):
+    monkeypatch.delenv("SLACK_WEBHOOK_REPORT")
+    result = runner.invoke(cli, ["classify"])
+    assert result.exit_code == 0, result.output
+    assert classify_env.urgent == [] and classify_env.marked == []  # 보낸 것으로 기록하지 않는다
+    assert "긴급 알림 2건 대기 중" in result.output
 
 
 # ---------- report ----------
@@ -221,8 +243,20 @@ def report_env(tmp_path, monkeypatch):
 
     state = types.SimpleNamespace(
         root=tmp_path, prev={}, get_report=[], render=[], slack=[], email=[], saved=[],
-        slack_error=None, email_error=None,
+        slack_error=None, email_error=None, sent_channels=set(), builds=[],
     )
+
+    def build(week):
+        state.builds.append(week)
+        r = _report(week, stats={"new_products": 7})
+        if len(state.builds) > 1:  # 다시 만들면 LLM이 다른 문장을 쓴다
+            r.tldr = f"요약 v{len(state.builds)}"
+        return r
+
+    def save_report(report, sent=True):
+        state.saved.append((report.week, sent))
+        if sent or report.week not in state.prev:
+            state.prev[report.week] = report
 
     def get_report(week):
         state.get_report.append(week)
@@ -248,9 +282,11 @@ def report_env(tmp_path, monkeypatch):
 
     monkeypatch.delenv("REPORT_URL", raising=False)
     monkeypatch.setattr(config, "ROOT", tmp_path)
-    monkeypatch.setattr(report_builder, "build", lambda week: _report(week, stats={"new_products": 7}))
+    monkeypatch.setattr(report_builder, "build", build)
+    monkeypatch.setattr(repo, "report_channels_sent", lambda week: set(state.sent_channels))
+    monkeypatch.setattr(repo, "mark_report_sent", lambda week, channel: state.sent_channels.add(channel))
     monkeypatch.setattr(repo, "get_report", get_report, raising=False)
-    monkeypatch.setattr(repo, "save_report", lambda report, sent=True: state.saved.append((report.week, sent)))
+    monkeypatch.setattr(repo, "save_report", save_report)
     monkeypatch.setattr(render, "to_html", to_html)
     monkeypatch.setattr(render, "to_markdown", to_markdown, raising=False)
     monkeypatch.setattr(slack, "send_report", send_report, raising=False)
@@ -320,6 +356,60 @@ def test_report_both_channels_fail_saved_as_unsent(report_env, alerts):
     assert len(alerts) == 2
     assert report_env.saved == [("2026-W47", False)]
     assert (report_env.root / "data" / "report-2026-W47.html").exists()  # 파일은 남는다
+
+
+def test_report_rerun_sends_only_the_failed_channel_with_same_content(report_env, alerts):
+    report_env.email_error = RuntimeError("SMTP 인증 실패")
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 1
+    assert len(report_env.slack) == 1 and report_env.email == []
+
+    report_env.email_error = None  # 메일 설정을 고친 뒤 같은 명령을 다시 실행
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0, result.output
+    assert len(report_env.slack) == 1  # 슬랙은 다시 나가지 않는다
+    assert report_env.builds == ["2026-W47"]  # LLM으로 다시 만들지 않는다
+    assert report_env.email == [("[경쟁사 주간 리포트] 2026-W47", "<html>요약</html>", "# 요약")]
+    assert report_env.sent_channels == {"slack", "email"}
+
+
+def test_report_rerun_after_full_send_does_nothing(report_env, alerts):
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 0
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0 and "이미 발송됨" in result.output
+    assert len(report_env.slack) == 1 and len(report_env.email) == 1
+    assert report_env.builds == ["2026-W47"] and alerts == []
+
+
+def test_report_force_rebuilds_and_resends_everything(report_env, alerts):
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 0
+    result = runner.invoke(cli, ["report", "--week", "2026-W47", "--force"])
+    assert result.exit_code == 0, result.output
+    assert len(report_env.slack) == 2 and len(report_env.email) == 2
+    assert report_env.builds == ["2026-W47", "2026-W47"]
+    assert report_env.prev["2026-W47"].tldr == "요약 v2"  # 다시 보낸 내용이 기록으로 남는다
+
+
+def test_report_dry_run_after_send_keeps_the_sent_record(report_env, alerts):
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 0
+    result = runner.invoke(cli, ["report", "--week", "2026-W47", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert len(report_env.slack) == 1 and len(report_env.email) == 1  # dry-run 은 보내지 않는다
+    assert "요약 v2" in (report_env.root / "data" / "report-2026-W47.md").read_text(encoding="utf-8")
+    assert report_env.prev["2026-W47"].tldr == "요약"  # 실제로 나간 내용은 그대로
+
+
+def test_report_failure_alert_does_not_leak_webhook_url(report_env, alerts):
+    import httpx
+
+    url = "https://hooks.slack.com/services/T000/B000/SECRETTOKEN"
+    try:
+        httpx.Response(404, request=httpx.Request("POST", url)).raise_for_status()
+    except httpx.HTTPStatusError as e:
+        report_env.slack_error = e
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 1
+    assert "2026-W47/slack" in alerts[0] and "HTTP 404" in alerts[0]
+    assert "SECRETTOKEN" not in alerts[0] + result.output and "hooks.slack.com" not in alerts[0] + result.output
 
 
 def test_report_build_failure_alerts_and_exits_nonzero(report_env, monkeypatch, alerts):

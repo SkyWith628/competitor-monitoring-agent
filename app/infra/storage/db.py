@@ -68,6 +68,17 @@ llm_calls = Table(
     Column("output_tokens", Integer),
     Column("called_at", _Iso),
 )
+report_sends = Table(  # 주간 리포트의 채널별 발송 기록 — 재실행 때 이미 나간 채널을 다시 보내지 않기 위해
+    "report_sends", metadata,
+    Column("week", Text, primary_key=True),
+    Column("channel", Text, primary_key=True),  # "slack" | "email"
+    Column("sent_at", Text, nullable=False),
+)
+urgent_alerts = Table(  # 긴급 알림을 보낸 이벤트 — 실패한 알림을 다음 실행에서 다시 시도하기 위해
+    "urgent_alerts", metadata,
+    Column("event_id", Integer, primary_key=True, autoincrement=False),
+    Column("sent_at", Text, nullable=False),
+)
 
 _engines: dict[str, Engine] = {}
 _initialized: set[str] = set()

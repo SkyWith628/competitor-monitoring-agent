@@ -151,3 +151,67 @@ def test_report_survives_one_channel_failing(world, monkeypatch):
     assert any("발송 실패" in body["text"] for url, body in world if url.endswith("/ops"))
     with db.connect() as conn:  # 발송된 것으로 기록된다
         assert conn.execute("SELECT sent_at FROM reports").fetchone()[0] is not None
+
+
+def test_report_rerun_does_not_resend_or_rewrite(world, monkeypatch):
+    """메일만 실패 → 고친 뒤 재실행: 슬랙은 다시 나가지 않고, 메일은 처음 나간 내용 그대로."""
+    builds = []
+
+    def build(week):
+        builds.append(week)
+        report = _build(week)
+        report.tldr = f"{len(builds)}번째로 만든 요약"
+        return report
+
+    monkeypatch.setattr("app.analysis.report_builder.build", build)
+    monkeypatch.delenv("MAIL_TO")
+    assert runner.invoke(cli, ["report", "--week", "2026-W47"]).exit_code == 1
+    slack_posts = [body for url, body in world if url.endswith("/report")]
+
+    monkeypatch.setenv("MAIL_TO", "team@example.com")
+    result = runner.invoke(cli, ["report", "--week", "2026-W47"])
+    assert result.exit_code == 0, result.output
+    assert [body for url, body in world if url.endswith("/report")] == slack_posts
+    assert builds == ["2026-W47"] and len(_SMTP.sent) == 1
+    assert "1번째로 만든 요약" in _SMTP.sent[0].get_body(("plain",)).get_content()
+    assert repo.report_channels_sent("2026-W47") == {"slack", "email"}
+
+    # 다 나간 뒤에는 다시 실행해도, dry-run 을 해도 발송 기록이 그대로다
+    assert "이미 발송됨" in runner.invoke(cli, ["report", "--week", "2026-W47"]).output
+    assert runner.invoke(cli, ["report", "--week", "2026-W47", "--dry-run"]).exit_code == 0
+    assert repo.get_report("2026-W47").tldr == "1번째로 만든 요약"
+    assert len(_SMTP.sent) == 1
+
+
+def test_urgent_alert_is_retried_after_slack_outage(world, monkeypatch):
+    monkeypatch.setattr("app.site_monitor.pipeline.run", _site_pipeline)
+    monkeypatch.setattr("app.analysis.classify.classify", _classify)
+    assert runner.invoke(cli, ["collect", "--source", "site", "--brand", "spao"]).exit_code == 0
+
+    def down(url, json, **kw):
+        world.append((url, json))
+        return httpx.Response(503, request=httpx.Request("POST", url))
+
+    world.clear()
+    monkeypatch.setattr(httpx, "post", down)
+    result = runner.invoke(cli, ["classify"])
+    assert result.exit_code == 1  # 슬랙 장애를 숨기지 않는다
+    assert repo.unclassified_events() == [] and len(repo.pending_urgent()) == 1
+    assert "hooks.example" not in result.output  # 웹훅 주소는 로그에 남기지 않는다
+
+    world.clear()
+    monkeypatch.setattr(httpx, "post", lambda url, json, **kw: world.append((url, json)) or _Response())
+    result = runner.invoke(cli, ["classify"])  # 슬랙 복구 후: 새로 분류할 것은 없지만 알림은 다시 나간다
+    assert result.exit_code == 0, result.output
+    assert [url for url, _ in world] == ["https://hooks.example/report"]
+    assert repo.pending_urgent() == []
+    world.clear()
+    assert runner.invoke(cli, ["classify"]).exit_code == 0 and world == []  # 한 번만
+
+
+def test_weekly_workflow_publishes_no_artifacts():
+    """공개 저장소라서 리포트·대시보드를 Actions 산출물로 올리면 누구나 내려받을 수 있다."""
+    from pathlib import Path
+
+    for workflow in (Path(__file__).parents[2] / ".github" / "workflows").glob("*.yml"):
+        assert "upload-artifact" not in workflow.read_text(encoding="utf-8"), workflow.name

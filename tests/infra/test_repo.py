@@ -172,3 +172,37 @@ def test_get_and_list_reports(tmp_db):
     assert repo.get_report("2026-W46") == _report("2026-W46", "수정본")
     assert [r.week for r in repo.list_reports()] == ["2026-W47", "2026-W46", "2026-W45"]
     assert [r.week for r in repo.list_reports(limit=2)] == ["2026-W47", "2026-W46"]
+
+
+def test_dry_run_save_never_overwrites_a_sent_report(tmp_db):
+    repo.save_report(_report("2026-W47", "발송본"))
+    repo.save_report(_report("2026-W47", "나중의 dry-run"), sent=False)
+    assert repo.get_report("2026-W47").tldr == "발송본"
+    assert repo.last_report_tldr("2026-W48") == "발송본"  # 다음 주 리포트는 실제로 나간 내용을 참고한다
+    repo.save_report(_report("2026-W47", "재발송"))  # --force 재발송은 덮어쓴다
+    assert repo.get_report("2026-W47").tldr == "재발송"
+
+
+def test_draft_can_be_overwritten_until_sent(tmp_db):
+    repo.save_report(_report("2026-W47", "초안 1"), sent=False)
+    repo.save_report(_report("2026-W47", "초안 2"), sent=False)
+    assert repo.get_report("2026-W47").tldr == "초안 2"
+
+
+def test_report_channels_sent_per_week(tmp_db):
+    assert repo.report_channels_sent("2026-W47") == set()
+    repo.mark_report_sent("2026-W47", "slack")
+    repo.mark_report_sent("2026-W47", "slack")  # 두 번 기록해도 한 번
+    repo.mark_report_sent("2026-W46", "email")
+    assert repo.report_channels_sent("2026-W47") == {"slack"}
+
+
+def test_pending_urgent_excludes_sent_and_lower_importance(tmp_db):
+    now = _now()
+    events = [_event(17, detected_at=now, importance=5), _event(17, detected_at=now, importance=4),
+              _event(17, detected_at=now, importance=5), _event(17, detected_at=now - timedelta(days=30), importance=5)]
+    repo.save_events(events)
+    assert [e.id for e in repo.pending_urgent()] == [1, 3]  # 4번은 너무 오래됨
+    repo.mark_urgent_sent([1])
+    repo.mark_urgent_sent([1])
+    assert [e.id for e in repo.pending_urgent()] == [3]

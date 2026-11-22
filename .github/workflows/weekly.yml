@@ -29,16 +29,4 @@ jobs:
         run: pip install -e .
       - name: report
         run: python -m app report
-      - name: dashboard
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}   # 발송이 실패해도 대시보드는 만든다
-        run: python -m app dashboard
-      - name: upload report & dashboard
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: weekly-report-${{ github.run_id }}
-          path: |
-            data/report-*.html
-            data/report-*.md
-            data/dashboard.html
-          if-no-files-found: warn
+      # 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다: 이 저장소는 공개라서 누구나 내려받을 수 있다.

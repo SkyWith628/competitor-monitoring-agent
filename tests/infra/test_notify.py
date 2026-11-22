@@ -100,26 +100,26 @@ def test_send_report_propagates_failure(posts):
 
 
 def test_send_urgent_sends_each_event(posts):
-    assert slack.send_urgent([_event(1), _event(2)]) == 2
+    assert [e.id for e in slack.send_urgent([_event(1), _event(2)])] == [1, 2]
     assert [p["url"] for p in posts] == [REPORT_URL, REPORT_URL]
     assert "긴급 알림" in posts[0]["json"]["blocks"][0]["text"]["text"]
     assert "<https://example.com/2|이벤트 2>" in _section_text(posts[1]["json"])
     assert "이벤트 1" in posts[0]["json"]["text"]
 
 
-def test_send_urgent_without_webhook_returns_zero(posts, monkeypatch):
+def test_send_urgent_without_webhook_sends_nothing(posts, monkeypatch):
     monkeypatch.delenv("SLACK_WEBHOOK_REPORT")
-    assert slack.send_urgent([_event()]) == 0
+    assert slack.send_urgent([_event()]) == []
     assert posts == []
 
 
 def test_send_urgent_empty_list(posts):
-    assert slack.send_urgent([]) == 0 and posts == []
+    assert slack.send_urgent([]) == [] and posts == []
 
 
 def test_send_urgent_continues_after_failure(posts, capsys):
     posts.fail_on = {1}
-    assert slack.send_urgent([_event(1), _event(2), _event(3)]) == 2
+    assert [e.id for e in slack.send_urgent([_event(1), _event(2), _event(3)])] == [1, 3]  # 실패한 2번은 빠진다
     assert len(posts) == 3
     assert "id=2" in capsys.readouterr().err
 
@@ -129,7 +129,7 @@ def test_send_urgent_survives_transport_error(monkeypatch, posts):
         raise httpx.ConnectError("연결 실패")
 
     monkeypatch.setattr(httpx, "post", boom)
-    assert slack.send_urgent([_event()]) == 0
+    assert slack.send_urgent([_event()]) == []
 
 
 def test_send_ops_alert_never_raises(monkeypatch, posts):
@@ -217,3 +217,44 @@ def test_send_html_lists_all_missing_settings(smtp, monkeypatch):
     monkeypatch.setenv("MAIL_TO", " , ")
     with pytest.raises(RuntimeError, match="SMTP_USER, SMTP_PASSWORD, MAIL_TO"):
         email.send_html("제목", "<p>본문</p>")
+
+
+# ---------- 비밀값이 경고·로그로 새지 않는다 ----------
+def _status_error(url: str, status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", url)
+    try:
+        httpx.Response(status, request=request).raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return e
+    raise AssertionError("오류가 나야 한다")
+
+
+def test_describe_error_hides_webhook_url():
+    e = _status_error("https://hooks.slack.com/services/T000/B000/SECRETTOKEN", 404)
+    assert "SECRETTOKEN" in repr(e)  # httpx 예외는 주소를 통째로 담는다
+    assert slack.describe_error(e) == "HTTPStatusError (HTTP 404)"
+
+
+def test_describe_error_hides_urls_in_any_message():
+    e = RuntimeError("could not connect to postgresql://user:pw123@db.example.com:5432/app "
+                     "nor 'https://www.googleapis.com/youtube/v3/channels?id=x&key=APIKEY'")
+    text = slack.describe_error(e)
+    assert "pw123" not in text and "APIKEY" not in text and "db.example.com" not in text
+    assert text.startswith("RuntimeError: could not connect to [주소 가림]")
+
+
+def test_describe_error_keeps_plain_messages():
+    assert slack.describe_error(RuntimeError("MAIL_TO 가 .env 에 없습니다")) == "RuntimeError: MAIL_TO 가 .env 에 없습니다"
+    assert slack.describe_error(KeyError()) == "KeyError"
+
+
+def test_urgent_failure_log_has_no_webhook_url(monkeypatch, capsys):
+    monkeypatch.setenv("SLACK_WEBHOOK_REPORT", "https://hooks.slack.com/services/T000/B000/SECRETTOKEN")
+
+    def post(url, json=None, timeout=None):
+        return httpx.Response(404, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    assert slack.send_urgent([_event()]) == []
+    err = capsys.readouterr().err
+    assert "HTTP 404" in err and "SECRETTOKEN" not in err and "hooks.slack.com" not in err

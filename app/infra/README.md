@@ -40,8 +40,8 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 |---|---|
 | `python -m app init-db` | 테이블 생성 (생략해도 첫 연결 때 자동 생성) |
 | `python -m app collect --source site\|news\|sns [--brand spao]` | 수집. 브랜드 하나가 실패해도 나머지는 계속하고, 실패가 있으면 종료 코드 1 |
-| `python -m app classify` | 미분류 이벤트 분류. 중요도 5는 리포트 채널로 긴급 알림 |
-| `python -m app report [--week 2026-W47] [--dry-run]` | 리포트 생성 → `data/report-<주차>.html`·`.md` 저장 → 슬랙·메일 발송. 주차 기본값은 한국 시간 기준 지난주 |
+| `python -m app classify` | 미분류 이벤트 분류. 중요도 5는 리포트 채널로 긴급 알림. 발송에 실패한 알림은 다음 실행에서 다시 시도한다 |
+| `python -m app report [--week 2026-W47] [--dry-run] [--force]` | 리포트 생성 → `data/report-<주차>.html`·`.md` 저장 → 슬랙·메일 발송. 주차 기본값은 한국 시간 기준 지난주. 한 채널만 실패했으면 같은 명령을 다시 실행해 그 채널만 같은 내용으로 재발송한다. 이미 다 나간 주차는 `--force`가 있어야 새로 만들어 다시 보낸다 |
 | `python -m app dashboard` | `data/dashboard.html` 생성 |
 | `python -m app prune [--weeks 8]` | 오래된 스냅샷 삭제 |
 
@@ -54,7 +54,10 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 | `LLM 분류 실패` | 분류 호출 실패. 이벤트는 미분류로 남아 다음 실행에서 다시 시도 |
 | `주간 리포트 생성 실패` / `발송 실패 <주차>/<채널>` | 한 채널이 실패해도 다른 채널은 발송한다 |
 
+| `긴급 알림 N건 발송 실패` | 중요도 5 알림이 리포트 채널로 나가지 못함. 다음 `classify` 실행에서 다시 시도 |
+
 `SLACK_WEBHOOK_OPS`가 없으면 경고는 보내지 않고 콘솔에만 남는다.
+경고와 로그의 오류 내용에서 주소(웹훅, API 키가 든 요청 주소, DB 주소)는 `[주소 가림]`으로 바뀐다.
 
 ## 운영 설정 (GitHub → Settings → Secrets and variables → Actions)
 
@@ -72,7 +75,7 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 ## 자동 실행
 
 - **daily-collect** (매일 06:00 KST): site → news → sns 수집 → 분류 → 스냅샷 정리. 한 단계가 실패해도 다음 단계는 실행된다.
-- **weekly-report** (매주 월 08:00 KST): 리포트 발송 → 대시보드 생성. 리포트와 대시보드 파일은 실행 결과의 Artifacts에서 내려받는다.
+- **weekly-report** (매주 월 08:00 KST): 리포트를 슬랙·메일로 발송한다. 저장소가 공개라서 리포트·대시보드 파일은 Actions 산출물로 올리지 않는다. 대시보드는 `DATABASE_URL`을 넣고 로컬에서 `python -m app dashboard`로 만든다.
 - 둘 다 Actions 탭에서 **Run workflow**로 수동 실행할 수 있다.
 
 ## 로컬에서 PostgreSQL로 테스트

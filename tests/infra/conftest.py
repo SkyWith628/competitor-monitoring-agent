@@ -19,5 +19,6 @@ def tmp_db(tmp_path, monkeypatch):
         return path
     monkeypatch.setenv("DATABASE_URL", url)
     with db.connect() as conn:
-        conn.execute("TRUNCATE raw_items, snapshots, change_events, reports, llm_calls RESTART IDENTITY")
+        tables = ", ".join(t.name for t in db.metadata.sorted_tables)  # 새 테이블이 생겨도 빠지지 않게
+        conn.execute(f"TRUNCATE {tables} RESTART IDENTITY")
     return url

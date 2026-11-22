@@ -10,7 +10,17 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, func, insert, select, text, update
 
 from app.core.models import Brand, ChangeEvent, RawItem, SourceType, WeeklyReport
-from app.infra.storage.db import change_events, connect, llm_calls, raw_items, reports, snapshots, upsert
+from app.infra.storage.db import (
+    change_events,
+    connect,
+    llm_calls,
+    raw_items,
+    report_sends,
+    reports,
+    snapshots,
+    upsert,
+    urgent_alerts,
+)
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -170,9 +180,29 @@ def recent_events(days: int = 30) -> list[ChangeEvent]:
     return [ChangeEvent.model_validate_json(r.data) for r in rows]
 
 
+def pending_urgent(days: int = 7) -> list[ChangeEvent]:
+    """중요도 5로 분류됐는데 아직 긴급 알림이 나가지 않은 최근 N일 이벤트 (오래된 순)."""
+    with connect() as conn:
+        done = {r.event_id for r in conn.execute(select(urgent_alerts.c.event_id)).fetchall()}
+    events = [e for e in recent_events(days) if e.importance == 5 and e.id not in done]
+    return sorted(events, key=lambda e: e.id or 0)
+
+
+def mark_urgent_sent(event_ids: list[int]) -> None:
+    now = datetime.now(KST).isoformat()
+    with connect() as conn:
+        for event_id in event_ids:
+            stmt = upsert(urgent_alerts).values(event_id=event_id, sent_at=now)
+            conn.execute(stmt.on_conflict_do_nothing(index_elements=["event_id"]))
+
+
 # ---------- Report (C 생성, D 발송) ----------
 def save_report(report: WeeklyReport, sent: bool = True) -> None:
-    """sent=False(dry-run)면 발송 시각을 새로 찍지 않고, 이미 발송된 기록이 있으면 그 시각을 유지한다."""
+    """리포트 저장. sent=True면 발송 시각을 찍는다.
+
+    sent=False(dry-run·발송 실패)는 아직 발송되지 않은 주차만 덮어쓴다. 이미 발송된 리포트는
+    실제로 나간 내용이 기록으로 남아야 하므로 건드리지 않는다.
+    """
     sent_at = datetime.now(KST).isoformat() if sent else None
     stmt = upsert(reports).values(
         week=report.week, tldr=report.tldr, data=report.model_dump_json(), sent_at=sent_at
@@ -181,13 +211,23 @@ def save_report(report: WeeklyReport, sent: bool = True) -> None:
         conn.execute(
             stmt.on_conflict_do_update(
                 index_elements=["week"],
-                set_={
-                    "tldr": stmt.excluded.tldr,
-                    "data": stmt.excluded.data,
-                    "sent_at": func.coalesce(stmt.excluded.sent_at, reports.c.sent_at),
-                },
+                set_={"tldr": stmt.excluded.tldr, "data": stmt.excluded.data, "sent_at": stmt.excluded.sent_at},
+                where=None if sent else reports.c.sent_at.is_(None),
             )
         )
+
+
+def report_channels_sent(week: str) -> set[str]:
+    """이 주차 리포트가 이미 나간 채널. 예: {"slack"}"""
+    with connect() as conn:
+        rows = conn.execute(select(report_sends.c.channel).where(report_sends.c.week == week)).fetchall()
+    return {r.channel for r in rows}
+
+
+def mark_report_sent(week: str, channel: str) -> None:
+    stmt = upsert(report_sends).values(week=week, channel=channel, sent_at=datetime.now(KST).isoformat())
+    with connect() as conn:
+        conn.execute(stmt.on_conflict_do_nothing(index_elements=["week", "channel"]))
 
 
 def last_report_tldr(week: str) -> str | None:

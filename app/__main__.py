@@ -26,6 +26,7 @@ ZERO_CHECK: dict[str, list[SourceType]] = {
     "site": [SourceType.SITE_PRODUCT, SourceType.SITE_PAGE],
     "sns": [SourceType.SNS_POST],
 }
+CHANNELS = ("slack", "email")  # 주간 리포트 발송 채널
 WEEK_RE = re.compile(r"(\d{4})-W(\d{2})")
 
 
@@ -89,8 +90,8 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
             continue
         except Exception as e:  # 한 브랜드 실패가 전체를 멈추지 않게
             failed.append(b.value)
-            slack.send_ops_alert(f"수집 실패 {source}/{b.value}: {e!r}")
-            typer.echo(f"[{source}/{b.value}] 실패: {e!r}", err=True)
+            slack.send_ops_alert(f"수집 실패 {source}/{b.value}: {slack.describe_error(e)}")
+            typer.echo(f"[{source}/{b.value}] 실패: {slack.describe_error(e)}", err=True)
             continue
         if source not in ZERO_CHECK:
             continue
@@ -98,8 +99,8 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
             n_items = repo.count_items_since(b, ZERO_CHECK[source], since=since)
         except Exception as e:
             failed.append(b.value)
-            slack.send_ops_alert(f"수집 건수 확인 실패 {source}/{b.value}: {e!r}")
-            typer.echo(f"[{source}/{b.value}] 수집 건수 확인 실패: {e!r}", err=True)
+            slack.send_ops_alert(f"수집 건수 확인 실패 {source}/{b.value}: {slack.describe_error(e)}")
+            typer.echo(f"[{source}/{b.value}] 수집 건수 확인 실패: {slack.describe_error(e)}", err=True)
             continue
         if n_items == 0:
             slack.send_ops_alert(f"파싱 0건 {source}/{b.value}: 수집된 항목이 없습니다 (셀렉터·API 변경 의심)")
@@ -112,37 +113,44 @@ def collect(source: str = typer.Option(..., help="site | news | sns"),
 @cli.command()
 def classify() -> None:
     from app.analysis.classify import classify as _classify
+    from app.core.config import env
     from app.infra.notify import slack
     from app.infra.storage import repo
 
     events = repo.unclassified_events()
-    if not events:
+    if events:
+        try:
+            classified = _classify(events)
+        except Exception as e:
+            slack.send_ops_alert(f"LLM 분류 실패 ({len(events)}건 대기): {slack.describe_error(e)}")
+            typer.echo(f"분류 실패: {slack.describe_error(e)}", err=True)
+            raise typer.Exit(1) from None
+        repo.update_events(classified)
+        typer.echo(f"분류 완료 {len(events)}건")
+    else:
         typer.echo("분류할 이벤트 없음")
-        return
-    try:
-        classified = _classify(events)
-    except Exception as e:
-        slack.send_ops_alert(f"LLM 분류 실패 ({len(events)}건 대기): {e!r}")
-        typer.echo(f"분류 실패: {e!r}", err=True)
-        raise typer.Exit(1) from None
-    repo.update_events(classified)
-    typer.echo(f"분류 완료 {len(events)}건")
 
-    urgent = [e for e in classified if e.importance == 5]
+    # 긴급 알림: 방금 분류한 것뿐 아니라, 지난 실행에서 발송에 실패한 것도 다시 시도한다
+    urgent = repo.pending_urgent()
     if not urgent:
         return
-    try:
-        sent = slack.send_urgent(urgent)
-    except Exception as e:  # 분류 결과는 이미 저장됨 — 알림만 실패
-        slack.send_ops_alert(f"긴급 알림 발송 실패 ({len(urgent)}건): {e!r}")
-        typer.echo(f"긴급 알림 발송 실패: {e!r}", err=True)
-        raise typer.Exit(1) from None
-    typer.echo(f"긴급 알림 {sent}건 발송")
+    if not env(slack.REPORT_WEBHOOK_ENV):
+        typer.echo(f"긴급 알림 {len(urgent)}건 대기 중 — {slack.REPORT_WEBHOOK_ENV} 미설정으로 보내지 않음", err=True)
+        return
+    sent = slack.send_urgent(urgent)
+    repo.mark_urgent_sent([e.id for e in sent if e.id is not None])
+    typer.echo(f"긴급 알림 {len(sent)}건 발송")
+    if len(sent) < len(urgent):
+        missed = len(urgent) - len(sent)
+        slack.send_ops_alert(f"긴급 알림 {missed}건 발송 실패 — 다음 classify 실행에서 다시 시도합니다")
+        typer.echo(f"긴급 알림 {missed}건 발송 실패", err=True)
+        raise typer.Exit(1)
 
 
 @cli.command()
 def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주)"),
-           dry_run: bool = typer.Option(False, help="발송하지 않고 HTML·Markdown만 저장")) -> None:
+           dry_run: bool = typer.Option(False, help="발송하지 않고 HTML·Markdown만 저장"),
+           force: bool = typer.Option(False, help="이미 발송한 주차도 새로 만들어 모든 채널에 다시 보낸다")) -> None:
     from app.analysis.report_builder import build
     from app.core.config import ROOT, env
     from app.infra.notify import email, render, slack
@@ -151,12 +159,24 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     if week is None:
         week = last_week()
     before = prev_week(week)  # 형식 검증도 겸한다
-    try:
-        r = build(week)
-    except Exception as e:
-        slack.send_ops_alert(f"주간 리포트 생성 실패 {week}: {e!r}")
-        typer.echo(f"리포트 생성 실패: {e!r}", err=True)
-        raise typer.Exit(1) from None
+
+    # 재실행 시 중복 발송 방지: 이미 나간 채널은 건너뛰고, 나간 리포트와 같은 내용을 나머지 채널에 보낸다
+    already = set() if force or dry_run else repo.report_channels_sent(week)
+    stored = repo.get_report(week) if already else None
+    if stored is not None and already >= set(CHANNELS):
+        typer.echo(f"{week} 리포트는 이미 발송됨 ({', '.join(sorted(already))}). 다시 보내려면 --force")
+        return
+    if stored is not None:
+        r = stored
+        typer.echo(f"{week} 리포트는 {', '.join(sorted(already))} 로 이미 발송됨 — 같은 내용으로 나머지 채널만 발송")
+    else:
+        already = set()
+        try:
+            r = build(week)
+        except Exception as e:
+            slack.send_ops_alert(f"주간 리포트 생성 실패 {week}: {slack.describe_error(e)}")
+            typer.echo(f"리포트 생성 실패: {slack.describe_error(e)}", err=True)
+            raise typer.Exit(1) from None
     prev = repo.get_report(before)
     prev_stats = prev.stats if prev else None  # 부록 수치표의 전주 대비
     html = render.to_html(r, prev_stats=prev_stats)
@@ -167,24 +187,33 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     out.with_suffix(".md").write_text(markdown, encoding="utf-8")
     typer.echo(f"리포트 생성: {out}")
     if dry_run:
-        repo.save_report(r, sent=False)
+        repo.save_report(r, sent=False)  # 이미 발송된 주차의 기록은 덮어쓰지 않는다
         return
 
-    channels = {
+    senders = {
         "slack": lambda: slack.send_report(r, full_report_url=env("REPORT_URL") or None),
         "email": lambda: email.send_html(f"[경쟁사 주간 리포트] {week}", html, text=markdown),
     }
     failed: list[str] = []
-    for name, send in channels.items():  # 한 채널 실패가 다른 채널 발송을 막지 않게
+    for name in CHANNELS:  # 한 채널 실패가 다른 채널 발송을 막지 않게
+        if name in already:
+            continue
         try:
-            send()
+            senders[name]()
             typer.echo(f"[{name}] 발송 완료")
         except Exception as e:
             failed.append(name)
-            slack.send_ops_alert(f"주간 리포트 발송 실패 {week}/{name}: {e!r}")
-            typer.echo(f"[{name}] 발송 실패: {e!r}", err=True)
-    repo.save_report(r, sent=len(failed) < len(channels))  # 한 채널이라도 나갔으면 발송으로 기록
+            slack.send_ops_alert(f"주간 리포트 발송 실패 {week}/{name}: {slack.describe_error(e)}")
+            typer.echo(f"[{name}] 발송 실패: {slack.describe_error(e)}", err=True)
+            continue
+        if not already:  # 첫 발송 직후 내용을 확정 저장 — 재실행 때 같은 내용을 쓴다
+            repo.save_report(r, sent=True)
+        repo.mark_report_sent(week, name)
+        already.add(name)
+    if not already:
+        repo.save_report(r, sent=False)  # 아무 채널도 못 나갔으면 초안으로만 남긴다
     if failed:
+        typer.echo(f"실패한 채널은 같은 명령을 다시 실행하면 그 채널만 재발송됩니다: {', '.join(failed)}", err=True)
         raise typer.Exit(1)
 
 
