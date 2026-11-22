@@ -17,7 +17,7 @@ def run_news(brand: Brand) -> list[ChangeEvent]:
     items = []
     for cls in (NaverNewsCollector, GoogleNewsCollector):
         items += cls(brand, cfg).collect()
-    new_items = [i for i in dedup(items) if not repo.exists(i)]
+    new_items = [i for i in dedup(items, ignore=cfg["keywords"]) if not repo.exists(i)]
     events = [ChangeEvent(brand=brand, change_type=ChangeType.NEWS, title=i.title, url=i.url,
                           detail={"source": i.source}) for i in new_items]
     repo.save_items(new_items)
