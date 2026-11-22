@@ -42,7 +42,7 @@ class _SMTP:
     def __exit__(self, *exc):
         return False
 
-    def starttls(self):
+    def starttls(self, context=None):
         pass
 
     def login(self, user, password):
@@ -213,12 +213,15 @@ def test_urgent_alert_is_retried_after_slack_outage(world, monkeypatch):
 def test_slack_followup_failure_does_not_resend_main_message(world, monkeypatch):
     """본 메시지는 나갔는데 브랜드별 후속 메시지에서 실패 → 재실행 때 후속 메시지만 나간다."""
     monkeypatch.setattr("app.analysis.report_builder.build", _build)
-    calls = []
+    outage = {"on": True}
+    report_posts_tried = []
 
     def flaky(url, json, **kw):
-        calls.append(url)
-        if url.endswith("/report") and len([u for u in calls if u.endswith("/report")]) == 2:
-            return httpx.Response(500, request=httpx.Request("POST", url))  # 두 번째 메시지(후속)만 실패
+        if url.endswith("/report"):
+            report_posts_tried.append(json)
+            # 장애 중에는 본 메시지(첫 번째)만 나가고, 그 뒤 메시지는 재시도해도 계속 500
+            if outage["on"] and len(report_posts_tried) >= 2:
+                return httpx.Response(500, request=httpx.Request("POST", url))
         world.append((url, json))
         return _Response()
 
@@ -227,6 +230,7 @@ def test_slack_followup_failure_does_not_resend_main_message(world, monkeypatch)
     first = [body for url, body in world if url.endswith("/report")]
     assert len(first) == 1 and len(_SMTP.sent) == 1  # 본 메시지와 메일은 나갔다
 
+    outage["on"] = False  # 슬랙 복구
     result = runner.invoke(cli, ["report", "--week", "2026-W47"])
     assert result.exit_code == 0, result.output
     report_posts = [body for url, body in world if url.endswith("/report")]

@@ -69,6 +69,7 @@ python -m app status              # 수집이 살아 있는지 확인
 | `긴급 알림 N건 발송 실패` | 중요도 5 알림이 리포트 채널로 나가지 못함. 다음 `classify` 실행에서 다시 시도 |
 
 `SLACK_WEBHOOK_OPS`가 없으면 경고는 보내지 않고 콘솔에만 남는다.
+슬랙 발송은 일시적인 실패(429, 5xx, 연결 오류)면 최대 3번까지 다시 시도한다. 주소가 틀린 경우(404 등)는 바로 실패한다.
 경고와 로그의 오류 내용에서 주소(웹훅, API 키가 든 요청 주소, DB 주소)는 `[주소 가림]`으로 바뀐다.
 
 ## 운영 설정 (GitHub → Settings → Secrets and variables → Actions)
@@ -81,7 +82,8 @@ python -m app status              # 수집이 살아 있는지 확인
 | `SLACK_WEBHOOK_OPS` | Secret | 권장 | 운영 경고 채널 |
 | `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_TO` | Secret | 필수 | 메일 발송 (`MAIL_TO`는 쉼표로 여러 명). Gmail은 앱 비밀번호 사용 |
 | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `IG_ACCESS_TOKEN`, `IG_BUSINESS_ACCOUNT_ID`, `YOUTUBE_API_KEY` | Secret | B 수집기용 | 뉴스·SNS API |
-| `SMTP_HOST`, `SMTP_PORT` | Variable | 선택 | 기본 `smtp.gmail.com` / `587` |
+| `SMTP_HOST`, `SMTP_PORT` | Variable | 선택 | 기본 `smtp.gmail.com` / `587`. 포트 465면 처음부터 TLS로 접속하고, 그 밖의 포트는 STARTTLS를 쓴다. 두 경우 모두 서버 인증서를 검증한다 |
+| `MAIL_FROM_NAME` | Variable | 선택 | 보내는 사람 표시 이름. 기본 `경쟁사 모니터링` |
 | `REPORT_URL` | Variable | 선택 | 슬랙 "전체 리포트 보기" 버튼 링크 |
 
 ## 자동 실행
