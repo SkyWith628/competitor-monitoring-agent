@@ -40,6 +40,10 @@ Supabase 에 쌓인 데이터를 팀원만 볼 수 있는 웹 페이지로 보�
 GitHub 저장소 **Variables** 에 `REPORT_URL` = `https://<배포 주소>/reports/latest` 를 넣으면 주간 리포트 슬랙 메시지에
 "전체 리포트 보기" 버튼이 생긴다.
 
+### 4. (선택) 샘플로 화면 확인
+수집기가 붙기 전에는 화면이 비어 있다. GitHub **Actions → sample-data → Run workflow → `seed-demo`** 로 예시 데이터를
+넣어 볼 수 있다. 화면 위에 안내 문구가 뜨고, 같은 워크플로의 `clear` 로 지운다 (`app/infra/README.md` 참고).
+
 ## 알아둘 점
 - 두 환경변수는 브라우저에 노출되는 공개 값이다. 데이터를 지키는 것은 이 키가 아니라 위의 RLS 정책이다.
   **DB 주소(`DATABASE_URL`)나 secret 키는 Vercel 에 넣지 않는다.**

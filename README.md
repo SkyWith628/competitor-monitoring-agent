@@ -70,3 +70,4 @@ pytest -q
 | `python -m app doctor` (설정 점검) / `python -m app status` (운영 현황) | D |
 
 운영 설정(Secrets, 운영 DB)과 운영 경고의 뜻은 [app/infra/README.md](app/infra/README.md) 참고.
+| `python -m app seed --demo` (화면 확인용 샘플) | D |

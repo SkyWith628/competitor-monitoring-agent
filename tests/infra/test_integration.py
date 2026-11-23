@@ -299,7 +299,7 @@ def test_rehearsal_seed_classify_report_clear(world, monkeypatch):
     assert posts and len(_SMTP.sent) == 1
     assert repo.report_channels_sent(REHEARSAL_WEEK) >= {"slack", "email"}
 
-    assert "12건 삭제" in runner.invoke(cli, ["seed", "--clear"]).output
+    assert "이벤트 12건" in runner.invoke(cli, ["seed", "--clear"]).output
     assert repo.events_of_week(REHEARSAL_WEEK) == [] and repo.get_report(REHEARSAL_WEEK) is None
     assert repo.report_channels_sent(REHEARSAL_WEEK) == set()
     assert repo.last_report_tldr("2026-W47") is None  # 리허설 리포트가 '지난주 요약'으로 새지 않는다

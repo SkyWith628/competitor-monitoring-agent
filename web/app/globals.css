@@ -129,3 +129,5 @@ summary { cursor: pointer; color: var(--link); font-size: 13px; width: fit-conte
   .tile .value { font-size: 22px; }
 }
 .report { display: grid; gap: 16px; }
+.banner { margin: 0; padding: 10px 14px; border-radius: 10px; background: var(--wash); border: 1px solid var(--axis); color: var(--ink-2); font-size: 14px; }
+.banner strong { color: var(--ink); }
