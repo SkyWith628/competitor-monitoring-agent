@@ -22,5 +22,8 @@ jobs:
       - run: pip install -e . && playwright install --with-deps chromium
       - run: python -m app collect --source site
       - run: python -m app collect --source news
+        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
       - run: python -m app collect --source sns
+        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
       - run: python -m app classify
+        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속

@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 from app.core.config import ROOT, env
 
-DB_PATH = Path(env("DB_PATH", str(ROOT / "data" / "monitor.db")))
+DB_PATH = ROOT / env("DB_PATH", "data/monitor.db")  # 상대 경로는 실행 위치가 아닌 저장소 루트 기준
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_items (

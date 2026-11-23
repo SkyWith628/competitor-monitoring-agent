@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from app.core.models import Brand, ChangeEvent, RawItem, SourceType, WeeklyReport
+from app.infra import KST
 from app.infra.storage.db import connect
 
 
@@ -92,11 +93,13 @@ def events_of_week(week: str) -> list[ChangeEvent]:
 
 
 # ---------- Report (C 생성, D 발송) ----------
-def save_report(report: WeeklyReport) -> None:
+def save_report(report: WeeklyReport, *, sent: bool = True) -> None:
+    """sent=False(드라이런·발송 실패)면 sent_at 을 비워 둔다."""
     with connect() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO reports (week, tldr, data, sent_at) VALUES (?,?,?,?)",
-            (report.week, report.tldr, report.model_dump_json(), datetime.now().isoformat()),
+            (report.week, report.tldr, report.model_dump_json(),
+             datetime.now(KST).isoformat() if sent else None),
         )
 
 
