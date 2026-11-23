@@ -25,10 +25,11 @@ def test_below_record_is_not_spike():
     assert detect_spikes([_post("new", likes=105, comments=21)], HISTORY) == []
 
 
-def test_hidden_likes_usual_zero():
-    history = [_post(f"h{n}", likes=0, comments=10) for n in range(5)]  # 좋아요 숨긴 계정
-    reason = detect_spikes([_post("new", likes=300, comments=10)], history)[0].detail["reason"]
-    assert "좋아요 평소 0 → 300 (이전 최고 0)" in reason  # 0으로 나눈 '배수'는 표시 안 함
+def test_hidden_likes_are_not_judged():
+    # 좋아요를 숨긴 게시물은 수집기(인스타 #11, 유튜브 #5)가 likes 칸을 비워 둔다
+    # → 비교할 좋아요 값이 없으니 좋아요는 판단하지 않고, 댓글로만 본다 (예전엔 '평소 0 → 300' 오탐)
+    history = [_post(f"h{n}", comments=10) for n in range(5)]
+    assert detect_spikes([_post("new", likes=300, comments=10)], history) == []
 
 
 def test_giveaway_comments_get_reason():
@@ -56,3 +57,31 @@ def test_small_numbers_are_ignored():
 
 def test_not_enough_history():
     assert detect_spikes([_post("new", likes=400)], HISTORY[:2]) == []
+
+
+def test_slow_growth_past_record_is_not_spike():
+    # 어제 105 → 오늘 112: 기록(110)은 넘었지만 하루에 7 늘었을 뿐 → 천천히 쌓인 것
+    yesterday = _post("new", likes=105, comments=21)
+    assert detect_spikes([_post("new", likes=112, comments=21)], [*HISTORY, yesterday]) == []
+
+
+def test_slow_growth_views_example_from_review():
+    # 리뷰 예: 최고 기록 15,000 채널에서 어제 14,990 → 오늘 15,010 (+20) 이면 급증 아님
+    history = [_post(f"v{n}", views=12_500 + n * 500, likes=100) for n in range(5)]  # 최고 14,500
+    history.append(_post("top", views=15_000, likes=100))
+    yesterday = _post("old_video", views=14_990, likes=100)
+    assert detect_spikes([_post("old_video", views=15_010, likes=100)], [*history, yesterday]) == []
+
+
+def test_fast_growth_since_last_time_is_spike():
+    # 어제 105 → 오늘 400: 기록도 넘고 하루에 295 늘었음 → 급증
+    yesterday = _post("new", likes=105, comments=21)
+    events = detect_spikes([_post("new", likes=400, comments=21)], [*HISTORY, yesterday])
+    assert list(events[0].detail["spikes"]) == ["likes"]
+
+
+def test_word_containing_event_is_not_giveaway():
+    # 'prevent' 안의 event 는 이벤트 게시물 단서가 아님
+    post = _post("new", title="How to prevent pilling", likes=110, comments=900)
+    reason = detect_spikes([post], HISTORY)[0].detail["reason"]
+    assert "이벤트" not in reason
