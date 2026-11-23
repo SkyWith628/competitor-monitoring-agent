@@ -321,7 +321,7 @@ def test_brand_marker_shapes_differ():
     legend = html.split('id="trend-legend"')[1].split("</ul>")[0]
     shapes = re.findall(r'<svg class="swatch s(\d)"[^>]*>(<[a-z]+ [^>]*>)</svg>', legend)
     assert [n for n, _ in shapes] == ["1", "2", "3", "4", "5"]
-    assert len({shape for _, shape in shapes}) == 4
+    assert len({shape for _, shape in shapes}) == 5
 
 
 # ---------- 운영 상태 ----------

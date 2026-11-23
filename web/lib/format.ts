@@ -1,4 +1,4 @@
-export const BRANDS = ["spao", "8seconds", "musinsa_standard", "uniqlo"] as const;
+export const BRANDS = ["spao", "8seconds", "musinsa_standard", "uniqlo", "whoau"] as const;
 export type Brand = (typeof BRANDS)[number];
 
 export const BRAND_LABEL: Record<string, string> = {
@@ -6,6 +6,7 @@ export const BRAND_LABEL: Record<string, string> = {
   "8seconds": "에잇세컨즈",
   musinsa_standard: "무신사 스탠다드",
   uniqlo: "유니클로",
+  whoau: "후아유",
 };
 
 export const CHANGE_LABEL: Record<string, string> = {

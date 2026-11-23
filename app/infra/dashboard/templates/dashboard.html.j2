@@ -10,14 +10,15 @@
   구성: 매크로 → <style> → 본문(운영 상태 / 브랜드별 현황 / 일별 이벤트 추이 / 주요 이벤트 /
         주간 리포트 / LLM 사용량) → <script>(차트 툴팁·키보드 이동, 인쇄 때 펼치기)
 -#}
-{#- 브랜드 표식. n은 1~4(Brand 선언 순서). 색각 이상이 있어도 범례·카드·툴팁에서 브랜드를 가려낼 수
-    있게 계열마다 모양을 다르게 쓴다: 1 원, 2 네모, 3 세모, 4 마름모 -#}
+{#- 브랜드 표식. n은 1~5(Brand 선언 순서). 색각 이상이 있어도 범례·카드·툴팁에서 브랜드를 가려낼 수
+    있게 계열마다 모양을 다르게 쓴다: 1 원, 2 네모, 3 세모, 4 마름모, 5 육각형 -#}
 {%- macro swatch(n) -%}
 <svg class="swatch s{{ n }}" viewBox="0 0 10 10" width="11" height="11" aria-hidden="true" focusable="false">
 {%- if n == 1 %}<circle cx="5" cy="5" r="5"/>
 {%- elif n == 2 %}<rect width="10" height="10" rx="1"/>
 {%- elif n == 3 %}<path d="M5 0 10 10H0z"/>
-{%- else %}<path d="M5 0 10 5 5 10 0 5z"/>{% endif -%}
+{%- elif n == 4 %}<path d="M5 0 10 5 5 10 0 5z"/>
+{%- else %}<path d="M2.5 .7h5L10 5 7.5 9.3h-5L0 5z"/>{% endif -%}
 </svg>
 {%- endmacro -%}
 {#- 상태 표시. kind는 render()의 상태 키(ok·stale·missing / sent·partial·unsent)와 강조용 alert.
@@ -49,10 +50,10 @@
     --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f;
     --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
     --link: #1c5cab; --ok: #006300; --alert: #b92d2d;
-    /* 브랜드 4색(파랑·주황·초록·자주). 고른 기준: ① 카드 배경과 대비 3:1 이상 ② 적록·청황 색각 이상
+    /* 브랜드 5색(파랑·주황·초록·자주·청록). 고른 기준: ① 카드 배경과 대비 3:1 이상 ② 적록·청황 색각 이상
        시뮬레이션에서도 어느 두 색이든 구분됨. 그래서 색상만이 아니라 밝기도 서로 다르게 잡았다.
        색을 바꿀 때는 두 기준을 다시 확인할 것(다크 모드 값은 어두운 배경 기준으로 따로 고른 것) */
-    --series-1: #2a78d6; --series-2: #d17236; --series-3: #2f6b12; --series-4: #a31583;
+    --series-1: #2a78d6; --series-2: #d17236; --series-3: #2f6b12; --series-4: #a31583; --series-5: #0f7c86;
   }
   /* screen 한정: 다크 모드 PC에서 인쇄해도 흰 종이에 밝은 글자가 찍히지 않게 인쇄는 항상 밝은 배색 */
   @media screen and (prefers-color-scheme: dark) {
@@ -62,7 +63,7 @@
       --ink: #f0efec; --ink-2: #c3c2b7; --muted: #979590;
       --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
       --link: #86b6ef; --ok: #0ca30c; --alert: #e66767;
-      --series-1: #3987e5; --series-2: #e29936; --series-3: #35802a; --series-4: #ca358b;
+      --series-1: #3987e5; --series-2: #e29936; --series-3: #35802a; --series-4: #ca358b; --series-5: #2aa3ad;
     }
   }
   * { box-sizing: border-box; }
@@ -93,6 +94,7 @@
   .s2 { fill: var(--series-2); }
   .s3 { fill: var(--series-3); }
   .s4 { fill: var(--series-4); }
+  .s5 { fill: var(--series-5); }
   .state { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   .state .glyph { flex: none; fill: var(--muted); }
   .state .glyph .ring { fill: none; stroke: var(--muted); stroke-width: 1.5; }

@@ -1,11 +1,11 @@
-/* 색은 app/infra/dashboard(파이썬 정적 대시보드)와 같은 값을 쓴다. 브랜드 4색은 밝은·어두운 테마 각각 검증한 조합이다. */
+/* 색은 app/infra/dashboard(파이썬 정적 대시보드)와 같은 값을 쓴다. 브랜드 5색은 밝은·어두운 테마 각각 검증한 조합이다. */
 :root {
   color-scheme: light dark;
   --page: #f9f9f7; --surface: #fcfcfb; --wash: #f0efec;
   --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.1);
   --link: #1c5cab; --ok: #006300; --alert: #b92d2d;
-  --series-1: #2a78d6; --series-2: #d17236; --series-3: #2f6b12; --series-4: #a31583;
+  --series-1: #2a78d6; --series-2: #d17236; --series-3: #2f6b12; --series-4: #a31583; --series-5: #0f7c86;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -13,7 +13,7 @@
     --ink: #f0efec; --ink-2: #c3c2b7; --muted: #979590;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.1);
     --link: #86b6ef; --ok: #0ca30c; --alert: #e66767;
-    --series-1: #3987e5; --series-2: #c98500; --series-3: #35802a; --series-4: #ca358b;
+    --series-1: #3987e5; --series-2: #c98500; --series-3: #35802a; --series-4: #ca358b; --series-5: #2aa3ad;
   }
 }
 
@@ -87,10 +87,12 @@ thead th { border-top: 0; color: var(--ink-2); font-size: 13px; font-weight: 600
 .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 .swatch.s1 { background: var(--series-1); } .swatch.s2 { background: var(--series-2); }
 .swatch.s3 { background: var(--series-3); } .swatch.s4 { background: var(--series-4); }
+.swatch.s5 { background: var(--series-5); }
 .chart-plot { position: relative; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .chart path.s1 { fill: var(--series-1); } .chart path.s2 { fill: var(--series-2); }
 .chart path.s3 { fill: var(--series-3); } .chart path.s4 { fill: var(--series-4); }
+.chart path.s5 { fill: var(--series-5); }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .axis { stroke: var(--axis); stroke-width: 1; }
 .chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
