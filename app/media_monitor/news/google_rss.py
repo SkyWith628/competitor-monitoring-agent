@@ -11,6 +11,7 @@ import httpx
 
 from app.core.base_collector import USER_AGENT, BaseCollector
 from app.core.models import RawItem, SourceType
+from app.media_monitor.news.rules import has_excluded, mentions_brand
 
 RSS_URL = "https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
 
@@ -47,10 +48,10 @@ class GoogleNewsCollector(BaseCollector):
                 continue
             title = _strip_press(e.title, source.get("title"))
 
-            # ④ 제외어가 들어간 기사는 버리기
-            #    (제목에 브랜드명이 없는 기사도 버리지 않는다. 무관 기사 판단은 설계대로
-            #     제외어 + C의 LLM 분류(relevance)에 맡긴다 — 수집 단계에서 버리면 되살릴 수 없음)
-            if any(word in title for word in exclude):
+            # ④ 공통 기준(rules.py, 네이버와 같음): 브랜드명이 없거나 제외어가 있으면 버리기
+            #    구글 RSS는 요약을 주지 않아 제목만 본다. 이 기준으로 빠지는 기사 대부분은
+            #    네이버가 요약 근거와 함께 같은 소식을 가져온다 (실데이터 18건 중 16건)
+            if not mentions_brand(self.config["keywords"], title) or has_excluded(exclude, title):
                 continue
 
             # ⑤ 팀 약속 양식(RawItem)에 옮겨 적기
