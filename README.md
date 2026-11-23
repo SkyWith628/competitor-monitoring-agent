@@ -49,7 +49,7 @@ pytest -q
 | `python -m app classify` | C |
 | `python -m app report --week 2026-W47 --dry-run` | C + D |
 | `python -m app dashboard` / `python -m app prune` | D |
-| `python -m app status` / `doctor` / `seed` | D (운영 점검·발송 리허설) |
+| `python -m app seed` / `seed --clear` (발송 리허설용 샘플) | D |
 | `python -m app doctor` (설정 점검) / `python -m app status` (운영 현황) | D |
 
 운영 설정(Secrets, 운영 DB)과 운영 경고의 뜻은 [app/infra/README.md](app/infra/README.md) 참고.
