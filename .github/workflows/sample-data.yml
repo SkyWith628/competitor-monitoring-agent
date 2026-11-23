@@ -1,0 +1,27 @@
+name: sample-data
+# 웹 대시보드 화면 확인용 샘플을 운영 DB 에 넣거나 지운다. 수동 실행 전용.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "seed-demo: 최근 30일에 [샘플] 데이터를 넣는다 / clear: 샘플을 모두 지운다 (실제 데이터는 그대로)"
+        type: choice
+        options: [seed-demo, clear]
+        required: true
+concurrency:               # 수집·리포트와 겹쳐 돌지 않게 같은 그룹에 둔다
+  group: monitor-pipeline
+  cancel-in-progress: false
+jobs:
+  sample-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REQUIRE_DATABASE_URL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e . -c constraints.txt
+      - run: python -m app seed ${{ inputs.action == 'clear' && '--clear' || '--demo' }}
+      - run: python -m app status

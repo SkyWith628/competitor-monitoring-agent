@@ -1,26 +1,174 @@
+{#
+  주간 리포트 메일 본문. render.to_html() 이 그린다. 변수는 render._context() 참고:
+    r(WeeklyReport), tldr(한 줄로 편 TL;DR), summaries(하이라이트가 있는 브랜드만), stats(render.stats_view 결과),
+    brand_label / change_label(내부 값 → 한글 이름), empty_tldr / empty_events(내용이 없을 때 문구)
+
+  메일 클라이언트 호환 규칙 — 고칠 때 지킬 것
+    - 외부 CSS/JS, <style>, class 를 쓰지 않는다. Gmail 등이 <head> 와 <style> 을 지우는 경우가 있어
+      모든 스타일을 태그마다 인라인으로 넣는다(그래서 아래처럼 스타일 문자열을 변수로 만들어 재사용한다).
+    - 배치는 table 로 한다. Outlook(Word 엔진)은 div 의 max-width·padding 을 제대로 따르지 않는다.
+    - 글꼴은 태그마다 다시 지정한다. 일부 클라이언트는 td 안으로 글꼴이 상속되지 않는다.
+    - 값은 전부 자동 이스케이프된다(render.py 의 autoescape). 링크 주소는 safe_url 필터를 거친다.
+    - 폭 확인: 360~390px(휴대폰)에서 가로 스크롤이 생기지 않아야 한다.
+#}
+{# ---- 재사용 스타일 ---- #}
+{% set font = "font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',Arial,sans-serif;" %}
+{% set h2 = font ~ "font-size:18px;line-height:26px;color:#111827;margin:0;padding:28px 0 10px 0;border-bottom:2px solid #111827;" %}
+{% set th = font ~ "font-size:13px;line-height:18px;color:#374151;background-color:#f3f4f6;padding:7px 8px;border:1px solid #d1d5db;" %}
+{% set td = font ~ "font-size:14px;line-height:20px;color:#1f2937;padding:7px 8px;border:1px solid #d1d5db;" %}
+{# 브랜드 × 변화 유형 표 전용: 휴대폰 폭(360~390px)에 6열이 들어가도록 글자·여백을 줄인다. 미디어 쿼리는
+   메일 클라이언트마다 지원이 달라 쓰지 않고, 넓은 화면에서도 같은 크기로 보인다. #}
+{% set sth = font ~ "font-size:11px;line-height:15px;color:#374151;background-color:#f3f4f6;padding:6px 2px;border:1px solid #d1d5db;word-break:keep-all;" %}
+{% set std = font ~ "font-size:12px;line-height:17px;color:#1f2937;padding:6px 2px;border:1px solid #d1d5db;" %}
+{% macro num(c) %}{{ c.value }}{% if c.delta %} <span style="color:#6b7280;font-size:12px;">({{ c.delta }})</span>{% endif %}{% endmacro %}
+{# 좁은 칸용: 증감은 통째로만 줄바꿈된다 — 폭이 넉넉하면 값 옆에, 모자라면 값 아래로 내려간다 #}
+{% macro snum(c) %}<span style="white-space:nowrap;">{{ c.value }}</span>{% if c.delta %} <span style="display:inline-block;white-space:nowrap;color:#6b7280;font-size:10px;line-height:14px;">({{ c.delta }})</span>{% endif %}{% endmacro %}
+{# ---- 문서 머리 ---- #}
 <!doctype html>
 <html lang="ko">
-<body style="font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; max-width: 720px; margin: auto; color: #222;">
-  <h1>📊 경쟁사 주간 리포트 {{ r.week }}</h1>
-  <p style="background:#f4f6f8; padding:12px; border-radius:8px;"><b>TL;DR</b> {{ r.tldr }}</p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{# iOS Mail 이 본문을 제멋대로 확대·재배치해 좁은 표가 깨지는 것을 막는다 (body 의 text-size-adjust 도 같은 이유) #}
+<meta name="x-apple-disable-message-reformatting">
+<title>경쟁사 주간 리포트 {{ r.week }}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+{% if tldr %}
+{# 프리헤더: 받은편지함 목록에서 제목 옆에 보이는 미리보기 문구. 본문에서는 보이지 않는다. #}
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:#f3f4f6;">{{ tldr }}</div>
+{% endif %}
+{# ---- 바깥 틀: 회색 배경 위에 최대 720px 흰 카드. role="presentation" 은 화면 낭독기가 배치용 표를 표로 읽지 않게 한다.
+     table-layout:fixed 는 안쪽 내용(넓은 표, 긴 단어)이 카드를 화면보다 넓게 밀어내지 못하게 한다. ---- #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;background-color:#f3f4f6;">
+<tr><td align="center" style="padding:16px 8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:720px;table-layout:fixed;background-color:#ffffff;border:1px solid #e5e7eb;">
+<tr><td style="padding:24px 16px 28px 16px;{{ font }}color:#1f2937;font-size:15px;line-height:24px;word-break:break-word;">
 
-  <h2>🔥 Top 5 변화</h2>
-  <ol>
+  {# ---- 제목 ---- #}
+  <h1 style="{{ font }}font-size:24px;line-height:32px;color:#111827;margin:0 0 16px 0;">📊 경쟁사 주간 리포트 {{ r.week }}</h1>
+
+  {# ---- TL;DR: 왼쪽 띠가 있는 강조 상자 (배경색·테두리가 div 보다 td 에서 안정적으로 보인다) ---- #}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td style="{{ font }}background-color:#eef2ff;border-left:4px solid #4f46e5;padding:14px 16px;font-size:15px;line-height:24px;color:#1f2937;">
+    <b>TL;DR</b> {% if tldr %}{{ r.tldr }}{% else %}<span style="color:#6b7280;">{{ empty_tldr }}</span>{% endif %}
+  </td></tr>
+  </table>
+
+  {# ---- Top 5 변화: 번호 | 브랜드·유형 꼬리표, 제목 링크, LLM 메모 ---- #}
+  <h2 style="{{ h2 }}">🔥 Top 5 변화</h2>
+  {% if r.top_events %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
   {% for e in r.top_events %}
-    <li>[{{ brand_label[e.brand.value] }}] <a href="{{ e.url }}">{{ e.title }}</a>{% if e.llm_note %} — {{ e.llm_note }}{% endif %}</li>
+  <tr>
+    <td width="28" valign="top" style="{{ font }}font-size:15px;line-height:24px;color:#6b7280;padding:12px 0 12px 0;border-bottom:1px solid #e5e7eb;">{{ loop.index }}.</td>
+    <td valign="top" style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;padding:12px 0 12px 0;border-bottom:1px solid #e5e7eb;">
+      <span style="{{ font }}font-size:12px;line-height:18px;color:#3730a3;background-color:#e0e7ff;padding:2px 8px;white-space:nowrap;">{{ brand_label.get(e.brand.value, e.brand.value) }}</span>
+      <span style="{{ font }}font-size:12px;line-height:18px;color:#4b5563;background-color:#f3f4f6;padding:2px 8px;white-space:nowrap;">{{ change_label.get(e.change_type.value, e.change_type.value) }}</span><br>
+      <a href="{{ e.url | safe_url }}" style="color:#1d4ed8;text-decoration:underline;font-weight:bold;">{{ e.title }}</a>
+      {% if e.llm_note %}<br><span style="color:#4b5563;">{{ e.llm_note }}</span>{% endif %}
+    </td>
+  </tr>
   {% endfor %}
-  </ol>
+  </table>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">{{ empty_events }}</p>
+  {% endif %}
 
-  <h2>브랜드별 요약</h2>
-  {% for s in r.brand_summaries %}
-    <h3>{{ brand_label[s.brand.value] }}</h3>
-    <ul>{% for h in s.highlights %}<li>{{ h }}</li>{% endfor %}</ul>
+  {# ---- 브랜드별 요약: 하이라이트가 없는 브랜드는 render 가 미리 걸러서 넘긴다 ---- #}
+  <h2 style="{{ h2 }}">브랜드별 요약</h2>
+  {% for s in summaries %}
+  <h3 style="{{ font }}font-size:16px;line-height:24px;color:#111827;margin:16px 0 4px 0;">{{ brand_label.get(s.brand.value, s.brand.value) }}</h3>
+  <ul style="margin:0;padding:0 0 0 22px;">
+    {% for h in s.highlights %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ h }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">브랜드별 요약이 없습니다.</p>
   {% endfor %}
 
-  <h2>💡 인사이트</h2>
-  <ul>{% for i in r.insights %}<li>{{ i }}</li>{% endfor %}</ul>
+  {# ---- 인사이트 ---- #}
+  <h2 style="{{ h2 }}">💡 인사이트</h2>
+  {% if r.insights %}
+  <ul style="margin:12px 0 0 0;padding:0 0 0 22px;">
+    {% for i in r.insights %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ i }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">(없음)</p>
+  {% endif %}
 
-  <h2>✅ 액션 제안</h2>
-  <ul>{% for a in r.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+  {# ---- 액션 제안 ---- #}
+  <h2 style="{{ h2 }}">✅ 액션 제안</h2>
+  {% if r.actions %}
+  <ul style="margin:12px 0 0 0;padding:0 0 0 22px;">
+    {% for a in r.actions %}
+    <li style="{{ font }}font-size:15px;line-height:24px;color:#1f2937;margin:0 0 4px 0;">{{ a }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">(없음)</p>
+  {% endif %}
+
+  {# ---- 부록: 수치 표. 행 = 변화 유형, 열 = 브랜드(짧은 이름) + 합계. 건수가 없는 유형은 render 가 뺀다 ---- #}
+  <h2 style="{{ h2 }}">부록: 수치 표</h2>
+  {% if stats.rows %}
+  <p style="margin:12px 0 8px 0;font-size:13px;line-height:20px;color:#6b7280;">브랜드 × 변화 유형 건수{% if stats.has_prev %} · 괄호 안은 전주 대비 증감{% endif %}</p>
+  {# 표가 그래도 넘치면(브랜드가 늘어난 경우 등) 표만 가로 스크롤 — 메일 전체가 옆으로 밀리지 않게 한다 #}
+  <div style="overflow-x:auto;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+    <tr>
+      <th scope="col" align="left" style="{{ sth }}padding-left:5px;">변화 유형</th>
+      {% for c in stats.short_columns %}
+      <th scope="col" align="right" style="{{ sth }}">{{ c }}</th>
+      {% endfor %}
+      <th scope="col" align="right" style="{{ sth }}">합계</th>
+    </tr>
+    {% for row in stats.rows %}
+    <tr>
+      <td align="left" style="{{ std }}padding-left:5px;word-break:keep-all;">{{ row.label }}</td>
+      {% for c in row.cells %}
+      <td align="right" style="{{ std }}">{{ snum(c) }}</td>
+      {% endfor %}
+      <td align="right" style="{{ std }}font-weight:bold;">{{ snum(row.total) }}</td>
+    </tr>
+    {% endfor %}
+    {% if stats.total_row %}
+    <tr>
+      <td align="left" style="{{ std }}padding-left:5px;font-weight:bold;background-color:#f9fafb;">{{ stats.total_row.label }}</td>
+      {% for c in stats.total_row.cells %}
+      <td align="right" style="{{ std }}font-weight:bold;background-color:#f9fafb;">{{ snum(c) }}</td>
+      {% endfor %}
+      <td align="right" style="{{ std }}font-weight:bold;background-color:#f9fafb;">{{ snum(stats.total_row.total) }}</td>
+    </tr>
+    {% endif %}
+  </table>
+  </div>
+  {% endif %}
+  {# 그 밖의 지표: 브랜드 × 유형 건수가 아닌 값(예: LLM 토큰 수)은 형태를 몰라도 "이름 | 값" 으로 보여준다 #}
+  {% if stats.extras %}
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:16px;">
+    <tr>
+      <th scope="col" align="left" style="{{ th }}">지표</th>
+      <th scope="col" align="right" style="{{ th }}">값</th>
+    </tr>
+    {% for x in stats.extras %}
+    <tr>
+      <td align="left" style="{{ td }}">{{ x.label }}</td>
+      <td align="right" style="{{ td }}white-space:nowrap;">{{ num(x) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% if not stats.rows and not stats.extras %}
+  <p style="margin:12px 0 0 0;color:#6b7280;">집계된 수치가 없습니다.</p>
+  {% endif %}
+
+</td></tr>
+</table>
+</td></tr>
+</table>
 </body>
 </html>
