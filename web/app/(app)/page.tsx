@@ -19,6 +19,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const SAMPLE_URL = "https://example.com/sample/"; // app/infra/sample_data.py 의 표식과 같아야 한다
 const STALE_HOURS = 36; // 하루 한 번 수집하므로 이보다 오래 소식이 없으면 멈춘 것으로 본다 (python -m app status 와 같은 기준)
 
 export default async function DashboardPage() {
@@ -42,6 +43,7 @@ export default async function DashboardPage() {
   const stale = sources.filter((s) => !s.last_collected_at || hoursBetween(s.last_collected_at, now) > STALE_HOURS);
   const important = events.filter((e) => (e.importance ?? 0) >= 4 && e.category !== "무관").slice(0, 20);
   const latest = reports[0];
+  const hasSamples = events.some((e) => e.url.startsWith(SAMPLE_URL)) || sources.some((s) => s.source.startsWith("sample-"));
 
   return (
     <>
@@ -49,6 +51,13 @@ export default async function DashboardPage() {
         <h1>대시보드</h1>
         <p className="muted">기준 시각 {formatTime(now)}</p>
       </div>
+
+      {hasSamples && (
+        <p className="banner" role="note">
+          <strong>샘플 데이터가 섞여 있습니다.</strong> 제목에 [샘플]이 붙은 항목과 <code>sample-</code> 소스는 화면
+          확인용 예시입니다. 운영을 시작하기 전에 GitHub Actions 의 sample-data 워크플로에서 clear 를 실행하세요.
+        </p>
+      )}
 
       <section className="tiles" aria-label="운영 상태">
         <div className="tile">

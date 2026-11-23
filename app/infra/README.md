@@ -44,7 +44,9 @@ D 내부용: `save_report`, `get_report`, `list_reports`, `recent_events`, `item
 | `python -m app report [--week 2026-W47] [--dry-run] [--force]` | 리포트 생성 → `data/report-<주차>.html`·`.md` 저장 → 슬랙·메일 발송. 주차 기본값은 한국 시간 기준 지난주. 한 채널만 실패했으면 같은 명령을 다시 실행해 그 채널만 같은 내용으로 재발송한다. 이미 다 나간 주차는 `--force`가 있어야 새로 만들어 다시 보낸다 |
 | `python -m app dashboard` | `data/dashboard.html` 생성 |
 | `python -m app prune [--weeks 8]` | 오래된 스냅샷 삭제 |
-| `python -m app seed [--clear]` | 발송 리허설용 샘플 이벤트 12건을 과거 주차(`2020-W01`)에 넣는다 / 지운다 |
+| `python -m app seed` | 발송 리허설용 샘플 이벤트 12건을 과거 주차(`2020-W01`)에 넣는다 |
+| `python -m app seed --demo` | 화면 확인용: 최근 30일에 `[샘플]` 이벤트·수집 항목·리포트·LLM 사용량을 넣는다 (LLM·알림 없음) |
+| `python -m app seed --clear` | 샘플(리허설·데모)을 모두 지운다. 실제 데이터는 건드리지 않는다 |
 | `python -m app status [--strict]` | 수집·분류·발송 현황. 소스별 마지막 수집 시각, 미분류 건수, 대기 중인 긴급 알림, 최근 리포트의 발송 여부. `--strict`면 36시간 넘게 멈춘 소스가 있을 때 종료 코드 1 |
 | `python -m app doctor [--send-test]` | 설정 점검. 빠진 키와 그 때문에 안 되는 기능을 알려준다(값은 출력하지 않음). `--send-test`면 운영 경고 채널과 메일로 확인 메시지를 실제로 보낸다 |
 
@@ -73,6 +75,15 @@ python -m app status              # 수집이 살아 있는지 확인
 GitHub **Actions → weekly-report → Run workflow** 에서 `rehearsal` 을 켜면 샘플 이벤트(제목에 `[샘플]`, 주차 `2020-W01`)를
 넣어 실제 LLM 으로 분류·리포트하고 **실제로 발송**한 뒤 샘플과 그 리포트·발송 기록을 지운다. 실제 주차 데이터와는 섞이지 않는다.
 로컬에서는 `python -m app seed` → `classify` → `report --week 2020-W01 --dry-run` → `seed --clear`.
+
+## 화면 확인용 샘플 (데모)
+
+수집기가 붙기 전에 웹 대시보드가 어떻게 보이는지 확인할 때 쓴다.
+GitHub **Actions → sample-data → Run workflow** 에서 `seed-demo` 를 고르면 운영 DB 의 최근 30일에 샘플이 들어가고, `clear` 를 고르면 샘플만 지워진다.
+
+- 샘플에는 표식이 붙는다: 이벤트 제목의 `[샘플]`, 소스·모델 이름의 `sample-`, 리포트 요약의 `[샘플]`. 지울 때는 이 표식만 본다.
+- 이벤트는 분류가 끝난 상태로 들어가므로 LLM 을 쓰지 않고, 중요도 5 샘플도 긴급 알림으로 나가지 않는다.
+- **실제 데이터와 같은 기간에 섞인다.** 샘플이 들어 있는 주차는 `report` 가 리포트 생성을 거부하므로(운영 경고 발송), 실제 수집을 시작하기 전에 `clear` 를 실행한다.
 
 ## 운영 경고 (`SLACK_WEBHOOK_OPS` → `#monitor-ops`)
 

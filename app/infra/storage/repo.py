@@ -60,6 +60,9 @@ def _week_range(week: str) -> tuple[str, str]:
     return start.isoformat(), (start + timedelta(days=7)).isoformat()
 
 
+SAMPLE_SOURCE_PREFIX = "sample-"  # 화면 확인용 샘플 데이터의 소스·모델 이름 접두어 (app/infra/sample_data.py)
+
+
 def _naive_iso(dt: datetime) -> str:
     """저장된 시각과 비교할 수 있는 문자열로 바꾼다: 시간대 정보를 떼어낸 로컬(한국) 시각의 ISO 문자열.
 
@@ -173,7 +176,9 @@ def silent_sources(brand: Brand, source_types: list[SourceType], since: datetime
         ).fetchall()
     # 소스별 "마지막으로 수집된 시각"이 이번 실행 시작(since)보다 이르면, 이번에는 한 건도 못 가져온 것이다
     cutoff = _naive_iso(since)
-    return [source for source, latest in rows if latest < cutoff]
+    # 샘플 데이터의 소스(sample-…)는 수집기가 없으니 '멈춘 소스'로 치지 않는다
+    return [source for source, latest in rows
+            if latest < cutoff and not source.startswith(SAMPLE_SOURCE_PREFIX)]
 
 
 def source_freshness() -> list[dict]:
@@ -449,3 +454,30 @@ def delete_report(week: str) -> None:
     with connect() as conn:
         conn.execute(delete(report_sends).where(report_sends.c.week == week))
         conn.execute(delete(reports).where(reports.c.week == week))
+
+
+def delete_sample_data(url_prefix: str, tldr_prefix: str) -> dict[str, int]:
+    """샘플 데이터만 골라 지운다. 실제 수집 데이터는 건드리지 않는다. 지운 건수를 종류별로 돌려준다.
+
+    샘플의 표식: 이벤트는 url 이 url_prefix 로 시작, 리포트는 tldr 이 tldr_prefix 로 시작,
+    수집 항목·LLM 호출은 source·model 이 SAMPLE_SOURCE_PREFIX 로 시작.
+    """
+    with connect() as conn:
+        # 이벤트는 JSON 텍스트로 들어 있다. pydantic 은 공백 없이 "url":"..." 로 쓴다
+        marker = f'"url":"{url_prefix}'
+        ids = [r.id for r in conn.execute(
+            select(change_events.c.id).where(change_events.c.data.contains(marker, autoescape=True))).fetchall()]
+        weeks = [r.week for r in conn.execute(
+            select(reports.c.week).where(reports.c.tldr.startswith(tldr_prefix, autoescape=True))).fetchall()]
+        if ids:
+            conn.execute(delete(urgent_alerts).where(urgent_alerts.c.event_id.in_(ids)))
+            conn.execute(delete(change_events).where(change_events.c.id.in_(ids)))
+        if weeks:
+            conn.execute(delete(report_sends).where(report_sends.c.week.in_(weeks)))
+            conn.execute(delete(reports).where(reports.c.week.in_(weeks)))
+        conn.execute(delete(snapshots).where(snapshots.c.source.startswith(SAMPLE_SOURCE_PREFIX, autoescape=True)))
+        items = conn.execute(
+            delete(raw_items).where(raw_items.c.source.startswith(SAMPLE_SOURCE_PREFIX, autoescape=True))).rowcount
+        calls = conn.execute(
+            delete(llm_calls).where(llm_calls.c.model.startswith(SAMPLE_SOURCE_PREFIX, autoescape=True))).rowcount
+    return {"events": len(ids), "reports": len(weeks), "items": items, "llm_calls": calls}

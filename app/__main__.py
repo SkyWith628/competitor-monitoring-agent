@@ -251,6 +251,15 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
         typer.echo(f"{week} 리포트는 일부 발송됨 — 같은 내용으로 나머지만 발송")
     else:
         sent = set()
+        from app.infra import sample_data
+
+        if sample_data.has_samples_in_week(week):
+            # 데모 샘플이 섞인 채로 만들면 가짜 이벤트가 실제 리포트에 들어가 팀에 발송된다
+            message = f"주간 리포트 {week} 중단: 데모 샘플 데이터가 섞여 있습니다. `python -m app seed --clear` 후 다시 실행하세요"
+            if not dry_run:
+                slack.send_ops_alert(message)
+            typer.echo(message, err=True)
+            raise typer.Exit(1)
         try:
             r = build(week)
         except Exception as e:
@@ -315,15 +324,26 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
 
 
 @cli.command()
-def seed(clear: bool = typer.Option(False, help="샘플 이벤트와 리허설 리포트를 지우기만 한다")) -> None:
-    """발송 리허설용 샘플 이벤트를 넣는다(과거 주차, 제목에 [샘플]). 실제 주차 데이터와 섞이지 않는다.
+def seed(demo: bool = typer.Option(False, help="화면 확인용: 최근 30일에 분류까지 끝난 샘플을 넣는다"),
+         clear: bool = typer.Option(False, help="샘플(리허설·데모)을 모두 지우기만 한다")) -> None:
+    """샘플 데이터를 넣거나 지운다. 샘플에는 [샘플] 표식이 붙고, 지울 때 실제 데이터는 건드리지 않는다.
 
-    리허설 순서: seed → classify → report --week <리허설 주차> → seed --clear
+    (옵션 없음) 발송 리허설용: 과거 주차에 미분류 이벤트를 넣는다. 실제 주차와 섞이지 않는다.
+                순서: seed → classify → report --week <리허설 주차> → seed --clear
+    --demo      화면 확인용: 최근 30일에 이벤트·수집 항목·리포트·LLM 사용량을 넣어 웹 대시보드를 채운다.
+                실제 데이터와 같은 기간에 섞이므로 운영 시작 전에 반드시 seed --clear 로 지운다.
     """
     from app.infra import sample_data
 
     if clear:
-        typer.echo(f"샘플 이벤트 {sample_data.clear()}건 삭제")
+        gone = sample_data.clear_demo()
+        sample_data.clear()  # 리허설 주차의 리포트·발송 기록
+        typer.echo(f"샘플 삭제: 이벤트 {gone['events']}건, 수집 항목 {gone['items']}건, 리포트 {gone['reports']}건, "
+                   f"LLM 호출 {gone['llm_calls']}건")
+    elif demo:
+        made = sample_data.seed_demo()
+        typer.echo(f"데모 샘플 저장: 이벤트 {made['events']}건, 수집 항목 {made['items']}건, 리포트 {made['reports']}건")
+        typer.echo("운영을 시작하기 전에 `python -m app seed --clear` 로 지우세요", err=True)
     else:
         typer.echo(f"샘플 이벤트 {sample_data.seed()}건 저장 (주차 {sample_data.REHEARSAL_WEEK})")
 
