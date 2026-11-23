@@ -1,4 +1,9 @@
-"""네이버 검색 API(뉴스) 수집기."""
+"""네이버 검색 API(뉴스) 수집기 — NAVER API HUB(네이버 클라우드) 기준.
+
+2026년 7월 말부터 검색 API 신규 신청은 개발자센터가 아닌 NAVER API HUB에서만 가능.
+주소·인증 헤더 이름만 다르고 요청 파라미터·응답 모양(items, title, originallink, pubDate)은 같다.
+https://guide.ncloud-docs.com/docs/apihub-migration
+"""
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +18,7 @@ from app.core.base_collector import BaseCollector
 from app.core.config import env
 from app.core.models import RawItem, SourceType
 
-API_URL = "https://openapi.naver.com/v1/search/news.json"
+API_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
 DISPLAY = 100  # 한 번에 받을 기사 수 (API 최대값)
 
 
@@ -58,11 +63,11 @@ class NaverNewsCollector(BaseCollector):
         """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
         client_id, secret = env("NAVER_CLIENT_ID"), env("NAVER_CLIENT_SECRET")
         if not client_id or not secret:
-            raise RuntimeError(".env 에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 를 채워야 합니다")
+            raise RuntimeError(".env 에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET (API HUB 인증 정보) 를 채워야 합니다")
         self.throttle()
         r = httpx.get(API_URL,
                       params={"query": keyword, "display": DISPLAY, "sort": "date"},
-                      headers={"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": secret},
+                      headers={"X-NCP-APIGW-API-KEY-ID": client_id, "X-NCP-APIGW-API-KEY": secret},
                       timeout=10)
         r.raise_for_status()
         return r.json()["items"]
