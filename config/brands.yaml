@@ -4,7 +4,14 @@ brands:
   spao:
     name: 스파오
     site:
-      urls: []            # TODO(A): 메인, 신상품, 세일/기획전, 주요 카테고리
+      urls: []                     # 공식몰은 robots.txt 로 봇 차단 → 직접 수집 안 함 (app/site_monitor/ROBOTS.md)
+      via: naver_shopping          # 있으면 네이버 쇼핑 검색 API 수집기 사용
+      naver_shopping:
+        queries: ["스파오"]         # 검색어
+        brands: ["스파오", "SPAO"]  # 응답 brand/maker 가 이 중 하나인 상품만 (띄어쓰기·대소문자 무시)
+        malls: []                  # TODO(A): 실호출로 mallName 확인 후 공식 판매처로 좁힘
+        max_items: 300             # 검색어당 최대 조회 수
+        sort: date                 # 최신 등록순
     news:
       keywords: ["스파오", "SPAO"]
       exclude: []         # TODO(B): 무관 기사 제외어
@@ -15,7 +22,14 @@ brands:
   8seconds:
     name: 에잇세컨즈
     site:
-      urls: []
+      urls: []                     # ssfshop.com robots.txt 차단
+      via: naver_shopping
+      naver_shopping:
+        queries: ["에잇세컨즈"]
+        brands: ["에잇세컨즈", "8seconds"]
+        malls: []
+        max_items: 300
+        sort: date
     news:
       keywords: ["에잇세컨즈", "8seconds"]
       exclude: []
@@ -26,7 +40,14 @@ brands:
   musinsa_standard:
     name: 무신사 스탠다드
     site:
-      urls: []
+      urls: []                     # musinsa.com robots.txt 차단
+      via: naver_shopping
+      naver_shopping:
+        queries: ["무신사 스탠다드"]
+        brands: ["무신사스탠다드", "MUSINSA STANDARD"]
+        malls: []
+        max_items: 300
+        sort: date
     news:
       keywords: ["무신사 스탠다드", "무신사스탠다드"]
       exclude: []
@@ -37,7 +58,14 @@ brands:
   uniqlo:
     name: 유니클로
     site:
-      urls: []
+      urls: []                     # robots.txt 는 허용하나 실제로는 403/타임아웃 차단
+      via: naver_shopping
+      naver_shopping:
+        queries: ["유니클로"]
+        brands: ["유니클로", "UNIQLO"]
+        malls: []
+        max_items: 300
+        sort: date
     news:
       keywords: ["유니클로", "UNIQLO"]
       exclude: []
