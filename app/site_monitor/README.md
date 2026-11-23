@@ -13,7 +13,8 @@
 | `selectors.py` | 브랜드별 CSS 셀렉터 (사이트 개편 시 여기만 수정) |
 | `parser.py` | HTML → `RawItem` 변환 (셀렉터 기반) |
 | `differ.py` | 전일 스냅샷 vs 오늘 → 신상품/가격변동 |
-| `pipeline.py` | `run(brand)` : 수집 → 저장 → 변화감지 (CLI가 호출) |
+| `pipeline.py` | `run(brand)` : 수집 → 저장 → 변화감지 (CLI가 호출). `site.urls`가 빈 브랜드는 실패 대신 '건너뜀' 처리 |
+| `trend.py` | **네이버 쇼핑인사이트 클릭 추이** (5개 브랜드 공통, 이벤트 없이 파일 저장만) |
 
 - 입력: `config/brands.yaml`의 `site.urls` (후아유: `cate_no=101` 1개)
 - 출력: `list[RawItem]` → D의 `infra.storage`, `list[ChangeEvent]` → C의 `analysis`
@@ -33,6 +34,18 @@
 | 품절·재입고 | 부분 | 품절 셀렉터는 카페24 표준 아이콘을 가정한 값. 품절 상품이 있는 페이지로 미검증 |
 | 기획전·배너 | 범위 밖 | 셀렉터 미작성 |
 | 브랜드 범위 | WHO.A.U 1곳 | 스파오·에잇세컨즈·무신사 스탠다드는 robots.txt 차단, 유니클로는 접속 차단 |
+
+## 쇼핑인사이트 추이 (1단계: 저장만)
+직접 수집이 막힌 4개 브랜드도 **관심도 추이**는 비교할 수 있게, 5개 브랜드의 패션의류 분야 키워드 클릭 추이를 하루 1회 받는다.
+
+- 실행: `python -m app.site_monitor.trend [--days 30]` → `data/trends/shopping_insight-<날짜>.json`
+- 키: `.env`에 `NCP_INSIGHT_KEY_ID` / `NCP_INSIGHT_KEY` (NCP 콘솔에서 쇼핑인사이트 API 이용 신청. B의 키와 이름을 분리)
+- 키워드: `brands.yaml`의 `site.shopping_insight.keyword`
+- 5개 브랜드를 **한 요청**(그룹 5개)으로 보낸다. `ratio`는 요청마다 최댓값 100으로 다시 맞춰지므로 한 응답 안에서만 비교한다.
+- 급증 후보: 어제 값이 직전 7일 평균의 1.5배 이상이고 5 이상일 때. **파일·로그에만 남기고 `ChangeEvent`는 만들지 않는다.**
+- 2단계(팀 협의 필요): `ChangeType.TREND_SPIKE` 추가 → 알림 라벨(`render.py`, 대시보드, `web/lib/format.ts`)과 C의 분류 기준을 함께 고친다.
+- 실호출 확인(2026-11-23): 응답 `title`이 요청의 `name`(브랜드 값)과 같게 오고, 100은 **5개 그룹 전체** 최댓값 기준이다(스파오만 100) → 같은 응답 안에서 브랜드 간 비교가 된다.
+- 한계: 상대값이라 판매량·매출이 아니다. 신상품·가격 정보는 없다.
 
 ## 새 사이트를 추가하려면
 1. `ROBOTS.md` 기준으로 robots.txt 허용·실제 응답·서버 렌더링 여부를 확인한다.

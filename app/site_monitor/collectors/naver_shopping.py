@@ -16,6 +16,7 @@ config/brands.yaml 예시 (site 아래):
 
 한계: 재고/품절 정보 없음(in_stock=None) → 품절·재입고 이벤트는 생기지 않는다.
       lprice 는 '최저가'라 판매처가 여러 곳이면 공식몰 가격과 다를 수 있다 → malls 로 좁힐 것.
+현재 brands.yaml 에는 via: naver_shopping 을 쓰는 브랜드가 없다(키 발급 불가). 키를 구하면 위 예시대로 다시 넣는다.
 ⚠ 응답 필드·한도는 공식 문서로 아직 검증하지 못했다(ROBOTS.md 참고). 키 발급 후 실호출로 확인.
 """
 from __future__ import annotations
