@@ -1,6 +1,12 @@
 """[B] 인스타그램 수집기 테스트 — 인터넷·토큰 없이 가짜 응답으로."""
+from datetime import datetime, timezone
+
+import httpx
+import pytest
+
 from app.core.models import Brand, SourceType
-from app.media_monitor.sns.instagram import InstagramCollector
+from app.media_monitor.sns import instagram
+from app.media_monitor.sns.instagram import InstagramCollector, _to_datetime
 
 # business_discovery 응답 모양 그대로
 FAKE = {"business_discovery": {"media": {"data": [
@@ -48,3 +54,53 @@ def test_title_skips_blank_braille_lines():
     post = dict(FAKE["business_discovery"]["media"]["data"][0], caption="⠀\n\u200b\n유니클로 감사제 오픈")
     c._get = lambda fields: {"business_discovery": {"media": {"data": [post]}}}
     assert c.collect()[0].title == "유니클로 감사제 오픈"
+
+
+# ── 진짜 _get 을 쓰되 인터넷 대신 정해 둔 응답 ─────────────────────────────
+TOKEN = "SECRET_TOKEN_123"
+
+
+def _real_get(monkeypatch, response: httpx.Response):
+    sent = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        request = httpx.Request("GET", url, params=params, headers=headers)
+        sent.append(request)
+        response.request = request
+        return response
+
+    monkeypatch.setenv("IG_ACCESS_TOKEN", TOKEN)
+    monkeypatch.setenv("IG_BUSINESS_ACCOUNT_ID", "1784")
+    monkeypatch.setattr(instagram.httpx, "get", fake_get)
+    c = InstagramCollector(Brand.SPAO, {"instagram": "spao_kr"})
+    c.request_interval_sec = 0
+    return c, sent
+
+
+def test_token_goes_in_header_not_url(monkeypatch):
+    c, sent = _real_get(monkeypatch, httpx.Response(200, json=FAKE))
+    assert len(c.collect()) == 2
+    assert TOKEN not in str(sent[0].url)
+    assert sent[0].headers["Authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(400, json={"error": {"message": "Invalid OAuth access token"}}),  # Meta JSON 오류
+    httpx.Response(502, text="<html>Bad Gateway</html>"),                           # JSON 이 아닌 오류
+    httpx.Response(200, text="<html>점검 중</html>"),                                # 200 인데 JSON 아님
+    httpx.Response(200, json={"id": "1784"}),                                       # 계정 정보 빠짐
+])
+def test_odd_responses_give_clear_error_without_token(monkeypatch, response):
+    c, _ = _real_get(monkeypatch, response)
+    with pytest.raises(RuntimeError, match="Instagram API 오류") as e:
+        c.collect()
+    assert TOKEN not in str(e.value)
+
+
+def test_timestamp_becomes_local_datetime():
+    # 인스타는 '+0000'(콜론 없음) 형식 → 로컬 시간대의 naive datetime 으로 (collected_at 과 형식 맞춤)
+    got = _to_datetime("2026-11-21T15:12:21+0000")
+    expected = datetime(2026, 11, 21, 15, 12, 21, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    assert got == expected
+    assert got.tzinfo is None
+    assert _to_datetime(None) is None

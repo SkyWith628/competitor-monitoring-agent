@@ -32,6 +32,8 @@ class InstagramCollector(BaseCollector):
         # ① 우리 계정 이름으로 브랜드 계정의 최근 게시물을 한 번에 조회
         fields = f"business_discovery.username({username}){{media.limit({MAX_POSTS}){{{MEDIA_FIELDS}}}}}"
         data = self._get(fields)
+        if "business_discovery" not in data:  # 200 인데 계정 정보가 빠진 응답
+            raise RuntimeError(f"Instagram API 오류: '{username}' 계정 정보가 응답에 없습니다")
         posts = data["business_discovery"].get("media", {}).get("data", [])
 
         # ② 팀 약속 양식(RawItem)에 옮겨 적기
@@ -63,12 +65,24 @@ class InstagramCollector(BaseCollector):
         if not token or not me:
             raise RuntimeError(".env 에 IG_ACCESS_TOKEN / IG_BUSINESS_ACCOUNT_ID 를 채워야 합니다")
         self.throttle()
-        r = httpx.get(f"{API}/{me}", params={"fields": fields, "access_token": token}, timeout=10)
+        # 토큰을 주소(?access_token=)가 아니라 헤더로 보낸다 → 요청 주소가 로그에 찍혀도 토큰은 없다
+        r = httpx.get(f"{API}/{me}", params={"fields": fields},
+                      headers={"Authorization": f"Bearer {token}"}, timeout=10)
         if r.status_code != 200:
-            # 토큰이 URL 에 들어가므로 httpx 기본 에러(요청 URL 포함) 대신 Meta 에러 메시지만 보여준다
-            message = r.json().get("error", {}).get("message", r.text[:200])
-            raise RuntimeError(f"Instagram API 오류 {r.status_code}: {message}")
-        return r.json()
+            # httpx 기본 에러(요청 URL 포함) 대신 Meta 에러 메시지만 보여준다
+            raise RuntimeError(f"Instagram API 오류 {r.status_code}: {_error_message(r)}")
+        try:
+            return r.json()
+        except ValueError:  # 200 인데 JSON 이 아닌 응답 (점검 페이지 등)
+            raise RuntimeError(f"Instagram API 오류: JSON 이 아닌 응답 {r.text[:200]!r}") from None
+
+
+def _error_message(r: httpx.Response) -> str:
+    """Meta 오류 응답(JSON)의 message 만 꺼낸다. JSON 이 아니면(예: 502 HTML) 앞부분만."""
+    try:
+        return r.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        return r.text[:200]
 
 
 def _title_from(caption: str, media_type: str) -> str:
