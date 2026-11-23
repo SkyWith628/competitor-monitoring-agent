@@ -50,17 +50,21 @@ def parse_products(html: str, *, brand: Brand, source: str, page_url: str,
         if not name or price is None:
             continue  # 광고 슬롯 등 상품이 아닌 카드
         link_node = _first(card, selectors.get("link", "")) or card.css_first("a[href]")
+        if link_node is None and card.attributes.get("href"):
+            link_node = card  # 카드 자체가 <a href> 인 경우 (유니클로)
         href = (link_node.attributes.get("href") if link_node else None) or page_url
         url = urljoin(page_url, href)
         sale = parse_price(_text(_first(card, selectors.get("sale_price", ""))))
-        img = _first(card, selectors.get("image", "img"))
+        img = _first(card, selectors.get("image") or "img")
+        # 지연 로딩 이미지는 src 대신 data-src 에 주소가 있다
+        img_src = (img.attributes.get("src") or img.attributes.get("data-src")) if img else None
         sold_out = bool(selectors.get("sold_out")) and card.css_first(selectors["sold_out"]) is not None
         items.append(RawItem(
             brand=brand, source_type=SourceType.SITE_PRODUCT, source=source,
             external_id=_external_id(card, url, selectors), url=url, title=name,
             price=price, sale_price=sale if sale and sale < price else None,
             in_stock=not sold_out,
-            image_url=urljoin(page_url, img.attributes["src"]) if img and img.attributes.get("src") else None,
+            image_url=urljoin(page_url, img_src) if img_src else None,
         ))
     return items
 

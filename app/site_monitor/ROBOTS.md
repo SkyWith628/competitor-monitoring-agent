@@ -7,7 +7,7 @@
 | 스파오 | spao.com | `Disallow: /` | ❌ 전체 금지 | 검색엔진·AI 검색봇만 `/i/item`, `/c/ctg`, `/p/planshop` 등 허용 |
 | 에잇세컨즈 | ssfshop.com | `Disallow: /` | ❌ 전체 금지 | 검색엔진·AI 봇만 허용 (`/secured/`, `/raffle/` 제외) |
 | 무신사 스탠다드 | musinsa.com | `Disallow: /` | ❌ 전체 금지 | "명단에 없는 신규 봇은 자동 차단" 정책을 robots.txt에 명시 |
-| 유니클로 | uniqlo.com | 일부만 금지 | ✅ 대부분 허용 | 아래 금지 경로 제외. `/kr/` 전용 추가 규칙 없음 |
+| 유니클로 | uniqlo.com | 일부만 금지 | ⚠️ robots는 허용, **실제로는 차단** | 우리 UA로 요청 시 목록 403 Access Denied(playwright), robots.txt·사이트맵도 응답 없음(httpx 타임아웃). 2026-11-23 확인. 수집기는 robots 확인 불가 → 전체 건너뜀(0건)으로 안전 종료 |
 
 ## 유니클로 금지 경로 (수집 URL에 넣지 말 것)
 - 장바구니 `/*/*/cart`, CMS `/*/*/cms/`, 사이즈 `/*/*/size/`, 리뷰 작성 `/*/*/*/reviews/new`

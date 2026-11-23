@@ -17,5 +17,14 @@ SELECTORS: dict[str, dict[str, str]] = {
     "spao": dict(_EMPTY),
     "8seconds": dict(_EMPTY),
     "musinsa_standard": dict(_EMPTY),
-    "uniqlo": dict(_EMPTY),
+    # 2026-11-23 /kr/ko/men/tops 에서 확인. JS 렌더링 필요(render: js).
+    # - 목록엔 현재 판매가 1개만 노출(정가 취소선 없음) → sale_price 없음. 인하는 가격 변동으로 감지.
+    # - 같은 상품도 색상 그룹(/00, /01)마다 가격이 달라 ID에 그룹 번호까지 포함.
+    # - 품절 상품은 목록에 표시되지 않는 것으로 보임 → sold_out 없음 (미확인).
+    "uniqlo": {**_EMPTY,
+               "product_card": "a.product-tile__link",
+               "name": "h3",
+               "price": "h3 + div",
+               "image": ".product-tile__carousel-wrapper img",
+               "id_regex": r"/products/(E\d+-\d+/\d+)"},
 }

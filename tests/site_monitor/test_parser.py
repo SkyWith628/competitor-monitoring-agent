@@ -54,6 +54,26 @@ def test_collector_skips_disallowed(monkeypatch):
     assert c.collect() == []
 
 
+def test_uniqlo_real_selectors():
+    from app.site_monitor.selectors import SELECTORS
+
+    html = (Path(__file__).parents[1] / "fixtures/html/uniqlo_listing.html").read_text(encoding="utf-8")
+    page = "https://www.uniqlo.com/kr/ko/men/tops"
+    items = parse_products(html, brand=Brand.UNIQLO, source="uniqlo.com", page_url=page,
+                           selectors=SELECTORS["uniqlo"])
+    # 같은 상품이라도 색상 그룹(/00, /01)별로 가격이 달라 별개 상품으로 본다
+    assert [(i.external_id, i.title, i.price) for i in items] == [
+        ("E450179-000/00", "소프트브러시드크루넥T(긴팔)", 29900),
+        ("E465185-000/00", "에어리즘코튼크루넥T(반팔)", 19900),
+        ("E465185-000/01", "에어리즘코튼크루넥T(반팔)", 12900),
+    ]
+    a, _, c = items
+    assert a.url == "https://www.uniqlo.com/kr/ko/products/E450179-000/00?colorDisplayCode=09"
+    assert a.image_url.endswith("krgoods_09_450179_3x4.jpg?width=300")
+    assert c.image_url.endswith("krgoods_09_465185_3x4.jpg?width=300")  # data-src, 색상칩 아님
+    assert all(i.sale_price is None and i.in_stock for i in items)
+
+
 def test_collector_requires_urls():
     with pytest.raises(ValueError, match="urls"):
         SpaoCollector(Brand.SPAO, {"urls": []}).collect()
