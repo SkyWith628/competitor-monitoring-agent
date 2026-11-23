@@ -1,13 +1,15 @@
 """네이버 쇼핑인사이트 키워드 클릭 추이 수집 (5개 브랜드 공통). 담당: A
 
 공식몰 직접 수집이 막힌 4개 브랜드도 '관심도 추이'만큼은 비교할 수 있게 하는 보조 지표다.
-이벤트(ChangeEvent)는 만들지 않고 결과를 data/trends/ 아래 JSON 으로만 저장한다(1단계).
-급증 판정도 계산해서 파일·로그에만 남긴다. 알림·리포트 연동은 팀 협의 후(ChangeType 추가 필요).
+추이 전체는 data/trends/ 아래 JSON 으로 저장하고(1단계),
+급증 후보는 ChangeEvent(TREND_SPIKE) 로 DB 에 넣어 분류·리포트·대시보드로 흘려보낸다(2단계).
+같은 브랜드·같은 날짜의 급증은 한 번만 저장한다(같은 날 다시 돌려도 중복 없음).
 
 공식 API (NCP API Gateway, 쇼핑인사이트 > 분야 내 키워드별 트렌드):
   POST https://naverapihub.apigw.ntruss.com/shopping/v1/category/keywords
   헤더 X-NCP-APIGW-API-KEY-ID / X-NCP-APIGW-API-KEY
     → .env 의 NCP_INSIGHT_KEY_ID / NCP_INSIGHT_KEY (B 의 키와 섞이지 않게 이름을 따로 둔다)
+    키 발급: https://console.ncloud.com/naver-api-hub/application (README '키 발급' 참고)
   본문 startDate·endDate(yyyy-mm-dd), timeUnit(date|week|month), category, keyword[≤5]{name, param[]}
   응답 results[]{title, keyword, data[]{period, ratio}}  ratio 는 '이 요청 안에서' 최댓값 100 기준 상대값.
   (2026-11-23 실호출 확인: title = 요청한 name, 100 은 그룹 5개 전체의 최댓값 기준)
@@ -19,7 +21,8 @@
 
 키워드는 config/brands.yaml 의 site.shopping_insight.keyword. 분야는 패션의류(50000000).
 
-실행:  python -m app.site_monitor.trend [--days 30]
+실행:  python -m app.site_monitor.trend [--days 30] [--no-events]
+  실패하면 운영 채널(SLACK_WEBHOOK_OPS)로 알리고 종료 코드 1.
 """
 from __future__ import annotations
 
@@ -34,11 +37,13 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.core.config import ROOT, brands_config, env
-from app.core.models import Brand
+from app.core.models import Brand, ChangeEvent, ChangeType
 
 log = logging.getLogger(__name__)
 
 API_URL = "https://naverapihub.apigw.ntruss.com/shopping/v1/category/keywords"
+# 이벤트의 근거 링크. 쇼핑인사이트 분야 통계 화면(같은 데이터를 사람이 확인할 수 있는 곳)
+EVIDENCE_URL = "https://datalab.naver.com/shoppingInsight/sCategory.naver"
 CATEGORY_FASHION = "50000000"  # 패션의류
 MAX_GROUPS = 5
 RETRY_STATUSES = {429, 500, 502, 503, 504}
@@ -155,18 +160,66 @@ def save(result: dict, out_dir: Path = OUT_DIR) -> Path:
     return path
 
 
+def spike_events(result: dict) -> list[ChangeEvent]:
+    """collect() 결과의 급증 후보 → TREND_SPIKE 이벤트. (저장은 하지 않는다)"""
+    events = []
+    for name, b in result["brands"].items():
+        s = b.get("spike")
+        if not s:
+            continue
+        events.append(ChangeEvent(
+            brand=Brand(name), change_type=ChangeType.TREND_SPIKE,
+            title=f"'{b['keyword']}' 쇼핑 클릭 급증 ({s['period']}, 직전 {SPIKE_WINDOW}일 평균의 {s['x']}배)",
+            url=EVIDENCE_URL,
+            # ratio·baseline 은 같은 요청 안의 상대값(최댓값 100). 판매량·매출이 아니다.
+            detail={"source": result.get("source"), "keyword": b["keyword"], "category": result.get("category"),
+                    "period": s["period"], "ratio": s["ratio"], "baseline": s["baseline"], "x": s["x"]},
+        ))
+    return events
+
+
+def _already_saved(event: ChangeEvent, recent: list[ChangeEvent]) -> bool:
+    return any(e.brand == event.brand and e.change_type == ChangeType.TREND_SPIKE
+               and e.detail.get("period") == event.detail.get("period") for e in recent)
+
+
+def save_spike_events(result: dict) -> list[ChangeEvent]:
+    """급증 이벤트 중 아직 저장되지 않은 것만 DB 에 저장하고 돌려준다."""
+    from app.infra.storage import repo
+
+    events = spike_events(result)
+    if not events:
+        return []
+    recent = repo.recent_events(days=SPIKE_WINDOW)
+    new = [e for e in events if not _already_saved(e, recent)]
+    repo.save_events(new)
+    return new
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="네이버 쇼핑인사이트 브랜드 키워드 추이 수집")
     parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--no-events", action="store_true", help="파일만 저장하고 급증 이벤트는 DB 에 넣지 않는다")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    result = ShoppingInsightTrend(brand_keywords()).collect(days=args.days)
-    path = save(result)
+    from app.infra.notify import slack
+    from app.infra.timeutil import use_korean_time
+
+    use_korean_time()  # 이벤트 detected_at 이 한국 시각으로 찍히게 (CLI 와 같은 기준)
+    try:
+        result = ShoppingInsightTrend(brand_keywords()).collect(days=args.days)
+        path = save(result)
+        events = [] if args.no_events else save_spike_events(result)
+    except Exception as e:  # noqa: BLE001 — 어떤 실패든 운영 채널에 알리고 종료 코드 1
+        slack.send_ops_alert(f"수집 실패 trend/shopping_insight: {slack.describe_error(e)}")
+        print(f"[trend] 실패: {slack.describe_error(e)}")
+        return 1
     for name, b in result["brands"].items():
         last = b["series"][-1]["ratio"] if b["series"] else 0
         mark = f"  ▲ 급증 x{b['spike']['x']}" if b["spike"] else ""
         print(f"{name:18} {b['keyword']:10} 최근 {last:6.1f}{mark}")
     print(f"저장: {path}")
+    print(f"[trend] 이벤트 {len(events)}건" + (" (--no-events)" if args.no_events else ""))
     return 0
 
 

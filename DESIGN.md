@@ -180,6 +180,7 @@ class ChangeType(str, Enum):
     NEWS = "news"
     SNS_SPIKE = "sns_spike"           # 반응수 급증 게시물
     SNS_NEW_POST = "sns_new_post"
+    TREND_SPIKE = "trend_spike"       # 네이버 쇼핑인사이트 키워드 클릭 급증 (A, 상대값·판매량 아님)
 
 class ChangeEvent(BaseModel):
     id: int | None = None

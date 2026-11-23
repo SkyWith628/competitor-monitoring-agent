@@ -19,6 +19,7 @@ export const CHANGE_LABEL: Record<string, string> = {
   news: "뉴스",
   sns_spike: "SNS 반응 급증",
   sns_new_post: "SNS 새 게시물",
+  trend_spike: "쇼핑 클릭 급증",
 };
 
 export const SOURCE_TYPE_LABEL: Record<string, string> = {

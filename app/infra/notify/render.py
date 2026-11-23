@@ -47,6 +47,7 @@ CHANGE_LABEL = {
     ChangeType.NEWS.value: "뉴스",
     ChangeType.SNS_SPIKE.value: "SNS 반응 급증",
     ChangeType.SNS_NEW_POST.value: "SNS 새 게시물",
+    ChangeType.TREND_SPIKE.value: "쇼핑 클릭 급증",
 }
 
 # Slack Block Kit 제한 (https://api.slack.com/reference/block-kit/blocks)

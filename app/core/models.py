@@ -54,6 +54,7 @@ class ChangeType(str, Enum):
     NEWS = "news"
     SNS_SPIKE = "sns_spike"
     SNS_NEW_POST = "sns_new_post"
+    TREND_SPIKE = "trend_spike"  # 네이버 쇼핑인사이트 키워드 클릭 급증 (A, site_monitor/trend.py)
 
 
 class Category(str, Enum):

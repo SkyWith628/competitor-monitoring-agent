@@ -72,6 +72,7 @@ CHANGE_LABEL = {
     ChangeType.NEWS: "뉴스",
     ChangeType.SNS_SPIKE: "SNS 급증",
     ChangeType.SNS_NEW_POST: "SNS 새 게시물",
+    ChangeType.TREND_SPIKE: "쇼핑 클릭 급증",
 }
 CHANNEL_LABEL = {"email": "메일", "slack": "슬랙"}
 # 상태 키는 템플릿의 state() 매크로가 모양(●▲◐○)과 색을 고를 때도 쓴다. 키를 바꾸면 템플릿도 함께.

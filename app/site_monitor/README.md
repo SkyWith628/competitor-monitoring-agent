@@ -14,7 +14,7 @@
 | `parser.py` | HTML → `RawItem` 변환 (셀렉터 기반) |
 | `differ.py` | 전일 스냅샷 vs 오늘 → 신상품/가격변동 |
 | `pipeline.py` | `run(brand)` : 수집 → 저장 → 변화감지 (CLI가 호출). `site.urls`가 빈 브랜드는 실패 대신 '건너뜀' 처리 |
-| `trend.py` | **네이버 쇼핑인사이트 클릭 추이** (5개 브랜드 공통, 이벤트 없이 파일 저장만) |
+| `trend.py` | **네이버 쇼핑인사이트 클릭 추이** (5개 브랜드 공통). 추이는 파일로, 급증은 `trend_spike` 이벤트로 저장 |
 
 - 입력: `config/brands.yaml`의 `site.urls` (후아유: `cate_no=101` 1개)
 - 출력: `list[RawItem]` → D의 `infra.storage`, `list[ChangeEvent]` → C의 `analysis`
@@ -35,15 +35,30 @@
 | 기획전·배너 | 범위 밖 | 셀렉터 미작성 |
 | 브랜드 범위 | WHO.A.U 1곳 | 스파오·에잇세컨즈·무신사 스탠다드는 robots.txt 차단, 유니클로는 접속 차단 |
 
-## 쇼핑인사이트 추이 (1단계: 저장만)
+## 쇼핑인사이트 추이
 직접 수집이 막힌 4개 브랜드도 **관심도 추이**는 비교할 수 있게, 5개 브랜드의 패션의류 분야 키워드 클릭 추이를 하루 1회 받는다.
 
-- 실행: `python -m app.site_monitor.trend [--days 30]` → `data/trends/shopping_insight-<날짜>.json`
-- 키: `.env`에 `NCP_INSIGHT_KEY_ID` / `NCP_INSIGHT_KEY` (NCP 콘솔에서 쇼핑인사이트 API 이용 신청. B의 키와 이름을 분리)
+- 실행: `python -m app.site_monitor.trend [--days 30] [--no-events]` → `data/trends/shopping_insight-<날짜>.json`
+- 매일 워크플로(`daily.yml`)의 `collect trend` 단계에서 분류(classify) 전에 돈다. 실패하면 운영 채널에 알리고 종료 코드 1.
+- 키: `.env`(로컬)와 GitHub Secrets(운영)에 `NCP_INSIGHT_KEY_ID` / `NCP_INSIGHT_KEY`. B의 키와 이름을 분리했다. `python -m app doctor`가 비어 있으면 경고한다.
 - 키워드: `brands.yaml`의 `site.shopping_insight.keyword`
 - 5개 브랜드를 **한 요청**(그룹 5개)으로 보낸다. `ratio`는 요청마다 최댓값 100으로 다시 맞춰지므로 한 응답 안에서만 비교한다.
-- 급증 후보: 어제 값이 직전 7일 평균의 1.5배 이상이고 5 이상일 때. **파일·로그에만 남기고 `ChangeEvent`는 만들지 않는다.**
-- 2단계(팀 협의 필요): `ChangeType.TREND_SPIKE` 추가 → 알림 라벨(`render.py`, 대시보드, `web/lib/format.ts`)과 C의 분류 기준을 함께 고친다.
+
+### 키 발급 (NAVER API HUB)
+1. https://console.ncloud.com/naver-api-hub/application 에 로그인한다.
+2. 애플리케이션을 등록하거나 기존 앱을 고르고, 사용할 API에 **쇼핑인사이트**를 체크한다.
+3. 앱 상세의 **인증 정보**에서 Client ID → `NCP_INSIGHT_KEY_ID`, Client Secret → `NCP_INSIGHT_KEY`에 넣는다.
+4. 운영 실행을 위해 같은 이름으로 GitHub 저장소 Secrets에도 등록한다.
+
+> 같은 앱을 B(뉴스·검색어트렌드)와 함께 쓰면 Secret을 재발급할 때 A의 키도 바뀐다. 재발급 전에 서로 알린다.
+
+### 급증 이벤트 (`trend_spike`)
+- 판정: 어제 값이 직전 7일 평균의 1.5배 이상이고 5 이상일 때.
+- 급증이면 `ChangeEvent(change_type=TREND_SPIKE)`를 저장한다. 이후 분류·리포트·대시보드로 다른 이벤트와 똑같이 흘러간다. 라벨은 "쇼핑 클릭 급증"이다.
+- `detail`: `keyword`, `period`(급증한 날), `ratio`, `baseline`(직전 7일 평균), `x`(배수), `source`, `category`
+- `url`: 쇼핑인사이트 분야 통계 화면(사람이 같은 추이를 확인하는 곳)
+- 중복 방지: 최근 7일 안에 같은 브랜드·같은 `period`의 `trend_spike`가 있으면 저장하지 않는다. 같은 날 다시 돌려도 이벤트는 한 번만 생긴다.
+- `--no-events`: 파일만 저장하고 이벤트는 만들지 않는다(확인용).
 - 실호출 확인(2026-11-23): 응답 `title`이 요청의 `name`(브랜드 값)과 같게 오고, 100은 **5개 그룹 전체** 최댓값 기준이다(스파오만 100) → 같은 응답 안에서 브랜드 간 비교가 된다.
 - 한계: 상대값이라 판매량·매출이 아니다. 신상품·가격 정보는 없다.
 
