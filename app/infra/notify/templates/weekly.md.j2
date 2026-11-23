@@ -1,30 +1,77 @@
+{#
+  주간 리포트 Markdown. render.to_markdown() 이 그린다 (메일의 text 파트, data/report-<주차>.md 파일).
+  weekly.html.j2 와 같은 변수(render._context)를 쓰고 같은 순서·같은 문구를 유지한다 — 한쪽을 고치면 다른 쪽도 고칠 것.
+  자동 이스케이프가 꺼져 있으므로 표 칸·링크 글자에는 md 필터를 써서 `|`, `[`, `]` 를 이스케이프한다.
+  빈 줄이 문법의 일부라(목록·표 앞뒤) 빈 줄을 함부로 지우지 말 것.
+#}
 # 📊 경쟁사 주간 리포트 {{ r.week }}
 
-> **TL;DR** {{ r.tldr }}
+> **TL;DR** {{ tldr or empty_tldr }}
 
+{# Top 5: http(s) 가 아닌 주소(safe_url 결과가 "#")는 링크 없이 제목만 쓴다 #}
 ## 🔥 Top 5 변화
-{% for e in r.top_events %}
-{{ loop.index }}. [{{ brand_label[e.brand.value] }}] [{{ e.title }}]({{ e.url }}){% if e.llm_note %} — {{ e.llm_note }}{% endif %}
 
+{% for e in r.top_events %}
+{{ loop.index }}. [{{ brand_label.get(e.brand.value, e.brand.value) }}] {% if (e.url | safe_url) != "#" %}[{{ e.title | md }}]({{ e.url | safe_url }}){% else %}{{ e.title | md }}{% endif %}{% if e.llm_note %} — {{ e.llm_note }}{% endif %}
+
+{% else %}
+{{ empty_events }}
 {% endfor %}
 
 ## 브랜드별 요약
-{% for s in r.brand_summaries %}
 
-### {{ brand_label[s.brand.value] }}
+{% for s in summaries %}
+### {{ brand_label.get(s.brand.value, s.brand.value) }}
+
 {% for h in s.highlights %}
 - {{ h }}
-{% else %}
-- (이번 주 주요 변화 없음)
-{% endfor %}
 {% endfor %}
 
+{% else %}
+브랜드별 요약이 없습니다.
+
+{% endfor %}
 ## 💡 인사이트
+
 {% for i in r.insights %}
 - {{ i }}
+{% else %}
+- (없음)
 {% endfor %}
 
 ## ✅ 액션 제안
+
 {% for a in r.actions %}
 - {{ a }}
+{% else %}
+- (없음)
 {% endfor %}
+
+{# 수치 표: 여기서는 폭 제약이 없어 브랜드 전체 이름(stats.columns)과 "값 (증감)" 한 덩어리(c.text)를 쓴다 #}
+## 부록: 수치 표
+
+{% if stats.rows %}
+브랜드 × 변화 유형 건수{% if stats.has_prev %} (괄호 안은 전주 대비){% endif %}
+
+
+| 변화 유형 |{% for c in stats.columns %} {{ c }} |{% endfor %} 합계 |
+|---|{% for c in stats.columns %}---:|{% endfor %}---:|
+{% for row in stats.rows %}
+| {{ row.label | md }} |{% for c in row.cells %} {{ c.text }} |{% endfor %} {{ row.total.text }} |
+{% endfor %}
+{% if stats.total_row %}
+| **{{ stats.total_row.label }}** |{% for c in stats.total_row.cells %} {{ c.text }} |{% endfor %} {{ stats.total_row.total.text }} |
+{% endif %}
+
+{% endif %}
+{% if stats.extras %}
+| 지표 | 값 |
+|---|---:|
+{% for x in stats.extras %}
+| {{ x.label | md }} | {{ x.text | md }} |
+{% endfor %}
+
+{% endif %}
+{% if not stats.rows and not stats.extras %}
+집계된 수치가 없습니다.
+{% endif %}

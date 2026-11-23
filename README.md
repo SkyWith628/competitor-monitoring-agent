@@ -36,7 +36,7 @@ tests/<역할 폴더>/    각자 자기 폴더 테스트
 ## 시작하기
 ```powershell
 python -m venv .venv; .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev]" -c constraints.txt
 copy .env.example .env      # 키 채우기
 python -m app init-db
 pytest -q
@@ -48,4 +48,8 @@ pytest -q
 | `python -m app collect --source news` / `--source sns` | B |
 | `python -m app classify` | C |
 | `python -m app report --week 2026-W47 --dry-run` | C + D |
-| `python -m app cleanup` | D |
+| `python -m app dashboard` / `python -m app prune` | D |
+| `python -m app seed` / `seed --clear` (발송 리허설용 샘플) | D |
+| `python -m app doctor` (설정 점검) / `python -m app status` (운영 현황) | D |
+
+운영 설정(Secrets, 운영 DB)과 운영 경고의 뜻은 [app/infra/README.md](app/infra/README.md) 참고.
