@@ -17,6 +17,12 @@ def _week_range(week: str) -> tuple[str, str]:
     return start.isoformat(), (start + timedelta(days=7)).isoformat()
 
 
+def _kst_iso(dt: datetime) -> str:
+    """DB 의 시각 컬럼은 문자열 비교로 조회하므로 항상 KST 로 맞춰 저장한다. 시간대 없는 값은 KST 로 본다."""
+    dt = dt.replace(tzinfo=KST) if dt.tzinfo is None else dt.astimezone(KST)
+    return dt.isoformat()
+
+
 def _item_key(brand: Brand, source: str, external_id: str):
     return and_(raw_items.c.brand == brand.value, raw_items.c.source == source,
                 raw_items.c.external_id == external_id)
@@ -30,7 +36,7 @@ def save_items(items: list[RawItem]) -> None:
         rows = []
         for i in items:
             row = {"brand": i.brand.value, "source": i.source, "external_id": i.external_id,
-                   "data": i.model_dump_json(), "collected_at": i.collected_at.isoformat()}
+                   "data": i.model_dump_json(), "collected_at": _kst_iso(i.collected_at)}
             conn.execute(delete(raw_items).where(_item_key(i.brand, i.source, i.external_id)))
             conn.execute(insert(raw_items).values(**row, source_type=i.source_type.value))
             rows.append(row)
@@ -85,7 +91,10 @@ def latest_collected_at(brand: Brand, source_type: SourceType) -> datetime | Non
             select(func.max(raw_items.c.collected_at))
             .where(raw_items.c.brand == brand.value, raw_items.c.source_type == source_type.value)
         ).scalar()
-    return datetime.fromisoformat(ts) if ts else None
+    if not ts:
+        return None
+    dt = datetime.fromisoformat(ts)
+    return dt if dt.tzinfo else dt.replace(tzinfo=KST)
 
 
 def purge_snapshots(keep_weeks: int = 8) -> int:
@@ -100,7 +109,7 @@ def save_events(events: list[ChangeEvent]) -> None:
     with connect() as conn:
         for e in events:
             result = conn.execute(insert(change_events).values(
-                brand=e.brand.value, data="{}", detected_at=e.detected_at.isoformat()))
+                brand=e.brand.value, data="{}", detected_at=_kst_iso(e.detected_at)))
             e.id = result.inserted_primary_key[0]
             conn.execute(update(change_events).where(change_events.c.id == e.id)
                          .values(data=e.model_dump_json()))
@@ -112,6 +121,12 @@ def update_events(events: list[ChangeEvent]) -> None:
         for e in events:
             conn.execute(update(change_events).where(change_events.c.id == e.id)
                          .values(data=e.model_dump_json()))
+
+
+def delete_events(ids: list[int]) -> None:
+    if ids:
+        with connect() as conn:
+            conn.execute(delete(change_events).where(change_events.c.id.in_(ids)))
 
 
 def unclassified_events() -> list[ChangeEvent]:
@@ -140,6 +155,11 @@ def save_report(report: WeeklyReport, *, sent: bool = True) -> None:
         conn.execute(insert(reports).values(
             week=report.week, tldr=report.tldr, data=report.model_dump_json(),
             sent_at=datetime.now(KST).isoformat() if sent else None))
+
+
+def delete_report(week: str) -> None:
+    with connect() as conn:
+        conn.execute(delete(reports).where(reports.c.week == week))
 
 
 def report_sent_at(week: str) -> str | None:

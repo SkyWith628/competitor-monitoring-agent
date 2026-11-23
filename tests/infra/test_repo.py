@@ -1,12 +1,12 @@
 """[D] 저장소 함수 + A·B 파이프라인이 저장소에 붙는지 확인하는 계약 테스트 (수집기는 가짜)."""
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import update
 from typer.testing import CliRunner
 
 from app.__main__ import cli
-from app.core.models import Brand, ChangeType, RawItem, SourceType
+from app.core.models import Brand, ChangeEvent, ChangeType, RawItem, SourceType
 from app.infra import KST
 from app.infra.notify import slack
 from app.infra.storage import db, repo
@@ -94,7 +94,7 @@ def test_alert_when_nothing_collected_at_all(ops, monkeypatch):
 
 
 def test_news_alert_only_when_stale(ops, monkeypatch):
-    old = datetime.now(KST).replace(tzinfo=None) - timedelta(days=5)
+    old = datetime.now(KST) - timedelta(days=5)
     _use_news(monkeypatch, [[_news(1)], [_news(1)], []], [[], [], []])
     runner.invoke(cli, ["collect", "--source", "news", "--brand", "spao"])
     runner.invoke(cli, ["collect", "--source", "news", "--brand", "spao"])  # 신규 0건이지만 어제 수집됨
@@ -107,7 +107,7 @@ def test_news_alert_only_when_stale(ops, monkeypatch):
 
 # ---------- 스냅샷 보관 ----------
 def test_cleanup_removes_only_old_snapshots(ops):
-    now = datetime.now(KST).replace(tzinfo=None)
+    now = datetime.now(KST)
     repo.save_items([_news(1, collected_at=now - timedelta(weeks=9)), _news(2, collected_at=now)])
     result = runner.invoke(cli, ["cleanup"])
     assert "1건 삭제" in result.output
@@ -125,6 +125,30 @@ def test_llm_usage_sums_by_model(ops):
         "model-a": {"calls": 2, "input_tokens": 150, "output_tokens": 30},
         "model-b": {"calls": 1, "input_tokens": 7, "output_tokens": 3},
     }
+
+
+# ---------- 시각은 KST 기준 ----------
+def _event(detected_at: datetime | None = None) -> ChangeEvent:
+    kw = {"detected_at": detected_at} if detected_at else {}
+    return ChangeEvent(brand=Brand.SPAO, change_type=ChangeType.NEWS, title="t", url="https://example.com/n", **kw)
+
+
+def test_default_timestamps_are_kst():
+    assert _event().detected_at.utcoffset() == timedelta(hours=9)
+    assert _news(1).collected_at.utcoffset() == timedelta(hours=9)
+
+
+def test_week_boundary_follows_kst_not_utc(ops):
+    """UTC 러너가 일요일 21:00 UTC 에 찍은 이벤트는 KST 로 월요일 06:00 — 새 주에 속해야 한다."""
+    repo.save_events([_event(datetime(2026, 11, 22, 21, tzinfo=UTC)),
+                      _event(datetime(2026, 11, 22, 14, tzinfo=UTC))])  # KST 일요일 23:00
+    assert len(repo.events_of_week("2026-W48")) == 1
+    assert len(repo.events_of_week("2026-W47")) == 1
+
+
+def test_naive_timestamp_is_read_as_kst(ops):
+    repo.save_events([_event(datetime.fromisoformat("2026-11-23T00:30:00"))])
+    assert len(repo.events_of_week("2026-W48")) == 1
 
 
 # ---------- DB 접속 설정 ----------
