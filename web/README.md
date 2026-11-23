@@ -38,6 +38,9 @@ Supabase 에 쌓인 데이터를 팀원만 볼 수 있는 웹 페이지로 보�
    2번(구성원 표)과 4번(초대)은 둘 다 해야 한다. 표에만 있고 초대를 안 하면 로그인 메일이 가지 않고,
    초대만 하고 표에 없으면 로그인은 되지만 데이터가 보이지 않는다.
 5. **Authentication → URL Configuration**: Site URL 을 Vercel 주소로, Redirect URLs 에 `https://<배포 주소>/auth/callback` 추가.
+   슬랙의 "전체 리포트 보기" 버튼으로 들어와 로그인하면 돌아갈 주소가 `/auth/callback?next=/reports/latest` 처럼
+   뒤에 값이 붙는다. 로그인 후 리포트가 아니라 첫 화면으로 가면, Redirect URLs 에 `https://<배포 주소>/**` 를
+   추가한다 (Supabase 는 `**` 를 "그 아래 모든 주소"로 읽는다).
 
 > **정책 SQL 이 바뀐 PR 은 머지 전에 SQL Editor 에서 먼저 실행한다.** `main` 에 머지되면 Vercel 이 바로 다시
 > 배포하는데, 새 화면이 읽는 뷰가 DB 에 아직 없으면 대시보드가 오류를 낸다. `policies.sql` 은 여러 번 실행해도
