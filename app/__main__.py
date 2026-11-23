@@ -466,6 +466,7 @@ def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 �
     need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 뉴스", "네이버 뉴스 수집이 실패합니다", "경고")
     need(["YOUTUBE_API_KEY"], "유튜브", "유튜브 수집이 실패합니다", "경고")
     need(["IG_ACCESS_TOKEN", "IG_BUSINESS_ACCOUNT_ID"], "인스타그램", "인스타그램 수집이 실패합니다", "경고")
+    need(["NCP_INSIGHT_KEY_ID", "NCP_INSIGHT_KEY"], "쇼핑인사이트", "쇼핑 클릭 추이 수집이 실패합니다", "경고")
 
     typer.echo("[시간대]")
     offset = datetime.now().astimezone().utcoffset()

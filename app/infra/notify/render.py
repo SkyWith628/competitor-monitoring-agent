@@ -28,7 +28,8 @@ from jinja2 import Environment, FileSystemLoader
 
 from app.core.models import ChangeEvent, ChangeType, WeeklyReport
 
-BRAND_LABEL = {"spao": "스파오", "8seconds": "에잇세컨즈", "musinsa_standard": "무신사 스탠다드", "uniqlo": "유니클로"}
+BRAND_LABEL = {"spao": "스파오", "8seconds": "에잇세컨즈", "musinsa_standard": "무신사 스탠다드", "uniqlo": "유니클로",
+               "whoau": "후아유"}
 # 메일 수치 표의 열 머리글용 짧은 이름 — 휴대폰 폭(360px)에서 브랜드 4열 + 합계가 한 화면에 들어가야 한다
 BRAND_SHORT_LABEL = {"8seconds": "8세컨즈", "musinsa_standard": "무신사"}
 
@@ -46,6 +47,7 @@ CHANGE_LABEL = {
     ChangeType.NEWS.value: "뉴스",
     ChangeType.SNS_SPIKE.value: "SNS 반응 급증",
     ChangeType.SNS_NEW_POST.value: "SNS 새 게시물",
+    ChangeType.TREND_SPIKE.value: "쇼핑 클릭 급증",
 }
 
 # Slack Block Kit 제한 (https://api.slack.com/reference/block-kit/blocks)

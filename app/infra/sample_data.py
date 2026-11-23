@@ -45,6 +45,8 @@ _SAMPLES: list[tuple[Brand, ChangeType, str, dict]] = [
     (Brand.UNIQLO, ChangeType.PRICE_DOWN, "히트텍 크루넥 T", {"before": 19900, "after": 14900}),
     (Brand.UNIQLO, ChangeType.NEWS, "유니클로, 디자이너 협업 컬렉션 내달 출시", {"source": "naver_news"}),
     (Brand.UNIQLO, ChangeType.SNS_NEW_POST, "감사제 예고 영상", {}),
+    (Brand.WHOAU, ChangeType.NEW_PRODUCT, "시그니처 패치 후드 집업", {"price": 62910}),
+    (Brand.WHOAU, ChangeType.PRICE_DOWN, "롱 스커트", {"before": 54900, "after": 44910}),
 ]
 
 

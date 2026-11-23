@@ -41,7 +41,7 @@ def test_demo_fills_the_dashboard_tables(ops):
     assert {e.brand for e in events} == set(Brand)
     assert all(e.detected_at <= _now() + timedelta(minutes=1) for e in events)
     sources = {(r["brand"], r["source"]) for r in repo.source_freshness()}
-    assert len(sources) == 12 and all(source.startswith("sample-") for _, source in sources)
+    assert len(sources) == 3 * len(Brand) and all(source.startswith("sample-") for _, source in sources)
     assert {u["model"] for u in repo.llm_usage()} == {"sample-classify-model", "sample-report-model"}
     report = repo.get_report(last_week())
     assert report is not None and report.tldr.startswith("[샘플]") and report.top_events

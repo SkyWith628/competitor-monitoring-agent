@@ -502,6 +502,7 @@ def test_dashboard_prints_output_path(tmp_path, monkeypatch):
 
 
 # ---------- 공통 준비: 한국 시간, 운영 DB 필수 ----------
+@pytest.mark.skipif(not hasattr(__import__("time"), "tzset"), reason="time.tzset()은 Unix 전용 (Windows 미지원)")
 def test_cli_runs_in_korean_time_even_on_utc_runner(monkeypatch):
     import time
     from datetime import timedelta

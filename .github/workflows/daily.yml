@@ -17,6 +17,8 @@ jobs:
       IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
       IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      NCP_INSIGHT_KEY_ID: ${{ secrets.NCP_INSIGHT_KEY_ID }}   # 쇼핑인사이트 (A, NAVER API HUB 앱 키)
+      NCP_INSIGHT_KEY: ${{ secrets.NCP_INSIGHT_KEY }}
       SLACK_WEBHOOK_REPORT: ${{ secrets.SLACK_WEBHOOK_REPORT }}   # 중요도 5 긴급 알림
       SLACK_WEBHOOK_OPS: ${{ secrets.SLACK_WEBHOOK_OPS }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}   # 운영 DB(PostgreSQL). 비어 있으면 러너 안의 SQLite(실행마다 초기화)
@@ -37,6 +39,9 @@ jobs:
       - name: collect sns
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python -m app collect --source sns
+      - name: collect trend   # 쇼핑인사이트 클릭 추이 → 급증 시 trend_spike 이벤트 (분류 전에 넣는다)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: python -m app.site_monitor.trend
       - name: classify
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python -m app classify
