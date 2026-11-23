@@ -46,7 +46,7 @@ def env(tmp_path, monkeypatch):
 def _seed():
     repo.save_events([ChangeEvent(brand=Brand.SPAO, change_type=ChangeType.PRICE_DOWN, title="히트텍 인하",
                                   url="https://example.com/p/1", detail={"before": 39900, "after": 29900},
-                                  detected_at=datetime(2026, 11, 17, 9))])  # noqa: DTZ001
+                                  detected_at=datetime.fromisoformat("2026-11-17T09:00:00"))])
 
 
 def _sent_at():
