@@ -82,3 +82,22 @@ def test_result_does_not_depend_on_order():
     forward = dedup(_titles(Brand.UNIQLO, UNIQLO_TITLES), ignore=["유니클로"])
     backward = dedup(_titles(Brand.UNIQLO, UNIQLO_TITLES[::-1]), ignore=["유니클로"])
     assert len(forward) == len(backward)
+
+
+# ── 실데이터(2026-11-23 구글 뉴스): 표현만 다른 같은 소식은 계속 합쳐져야 함 ─────────────
+# 리뷰 경계 사례를 막느라 기준을 너무 엄격하게 하면 이런 기사들이 따로 남아 리포트에 같은 소식이 반복된다
+def test_real_paraphrases_of_same_story_are_merged():
+    musinsa = ["무신사 스탠다드, 제주 첫 매장 연다…국내 45번째 점포",
+               "무신사 스탠다드, 제주 첫 매장 개점…전국 45번째 점포",
+               "농심, 무신사 스탠다드와 새우깡 55주년 기념 티셔츠 협업",
+               "농심, 무신사 스탠다드와 '새우깡' 55주년 기념 '커스텀 티셔츠' 선봬",
+               "농심 새우깡, 무신사 스탠다드와 협업…55주년 기념 커스텀 티셔츠 출시"]
+    assert len(dedup(_titles(Brand.MUSINSA_STANDARD, musinsa), ignore=MUSINSA)) == 2
+
+    uniqlo = ["유니클로, 저소득 독거노인에 히트텍 7만장 기부…11억원 규모",
+              "유니클로, 국내 저소득층 독거노인에 히트텍 7만장 기부",
+              "유니클로, 독거노인 3만5000명에 히트텍 7만 장 지원",
+              "유니클로, 독거노인 3만5천 명 '히트텍' 7만 장 지원",  # '3만5천' = '3만5000'
+              "희망브리지·유니클로, 거제시 감사패 수상",
+              "희망브리지·유니클로, 거제시 수해 복구·재난 예방 공로 감사패"]
+    assert len(dedup(_titles(Brand.UNIQLO, uniqlo), ignore=["유니클로", "UNIQLO"])) == 3
