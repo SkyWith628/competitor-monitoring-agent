@@ -86,3 +86,10 @@ def test_no_warning_below_rss_limit(caplog):
     c._fetch = lambda query: _feed(RSS_LIMIT - 1)
     c.collect()
     assert "RSS 한도" not in caplog.text
+
+
+def test_minor_feed_problem_with_articles_is_not_an_error():
+    """정의 안 된 엔티티 하나로 feedparser 가 bozo 를 켜도, 기사가 파싱됐으면 수집한다."""
+    c = _collector()
+    c._fetch = lambda query: SAMPLE.replace("<channel>", "<channel><title>a &nbsp; b</title>")
+    assert len(c.collect()) == 2

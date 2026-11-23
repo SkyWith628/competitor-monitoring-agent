@@ -36,11 +36,18 @@ def run_news(brand: Brand) -> list[ChangeEvent]:
     # 그다음은 제목에 브랜드명이 있는 기사를 앞으로: 같은 소식이면 '[식음료 소식] KT&G·풀무원·농심' 같은
     # 묶음 기사보다 '농심, 무신사 스탠다드와 새우깡 티셔츠' 같은 제목이 대표가 된다
     keywords = [k.lower() for k in cfg["keywords"]]
-    items.sort(key=lambda i: (not repo.exists(i), not any(k in i.title.lower() for k in keywords)))  # 안정 정렬
-    new_items = [i for i in dedup(items, ignore=cfg["keywords"]) if not repo.exists(i)]
+    stored = {(i.source, i.external_id): repo.exists(i) for i in items}  # 기사당 DB 조회 한 번
+
+    def is_stored(i) -> bool:
+        return stored[(i.source, i.external_id)]
+
+    items.sort(key=lambda i: (not is_stored(i), not any(k in i.title.lower() for k in keywords)))  # 안정 정렬
+    new_items = [i for i in dedup(items, ignore=cfg["keywords"]) if not is_stored(i)]
     events = [ChangeEvent(brand=brand, change_type=ChangeType.NEWS, title=i.title, url=i.url,
                           detail={"source": i.source}) for i in new_items]
-    repo.save_items(new_items)
+    # 중복으로 걸러진 기사도 (이벤트 없이) 저장한다. 저장하지 않으면 대표 기사가 7일 창에서 빠진 날,
+    # 아직 창 안에 남은 같은 소식의 다른 기사가 '새 기사'가 되어 같은 소식이 다시 이벤트로 올라온다
+    repo.save_items([i for i in items if not is_stored(i)])
     repo.save_events(events)
     collectors.raise_if_failed(f"뉴스 수집 일부 실패 (나머지 이벤트 {len(events)}건은 저장함)")
     return events
@@ -71,7 +78,8 @@ def run_sns(brand: Brand) -> list[ChangeEvent]:
         history = repo.recent_posts(brand, source=collector.source, limit=30)
         events += detect_spikes(items, history)
         events += [ChangeEvent(brand=brand, change_type=ChangeType.SNS_NEW_POST, title=i.title,
-                               url=i.url) for i in items if _is_recent(i.published_at) and not repo.exists(i)]
+                               url=i.url, detail={"source": i.source})
+                   for i in items if _is_recent(i.published_at) and not repo.exists(i)]
         repo.save_items(items)  # 오래된 글도 저장은 한다 (급증 감지의 '평소' 비교 대상)
     repo.save_events(events)
     if failures:

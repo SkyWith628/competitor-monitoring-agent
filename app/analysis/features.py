@@ -32,7 +32,17 @@ def discount_pct(e: ChangeEvent) -> float | None:
 
 
 def spike_ratio(e: ChangeEvent) -> float | None:
-    """SNS 급증 배수 (likes/avg_likes 또는 views/avg_views)."""
+    """SNS 급증 배수 (평소 대비 몇 배).
+
+    B의 급증 감지(media_monitor/spike.py)는 detail["spikes"] = {"likes": {"value", "usual", "record", "ratio"}, ...}
+    로 지표별 배수를 이미 계산해 준다. 여러 지표가 급증했으면 가장 큰 배수를 쓴다.
+    (옛 형식 likes/avg_likes 도 읽는다 — 골든셋 목업이 이 형식이다.)
+    """
+    spikes = e.detail.get("spikes")
+    if isinstance(spikes, dict):
+        ratios = [r for s in spikes.values() if isinstance(s, dict) and (r := _num(s.get("ratio"))) is not None]
+        if ratios:
+            return max(ratios)
     for metric in ("likes", "views", "comments"):
         cur, avg = _num(e.detail.get(metric)), _num(e.detail.get(f"avg_{metric}"))
         if cur is not None and avg:

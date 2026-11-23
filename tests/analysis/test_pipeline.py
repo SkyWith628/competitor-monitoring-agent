@@ -40,6 +40,16 @@ def test_spike_ratio_and_event_line():
     assert "computed" not in json.loads(features.event_line(_ev(2)))
 
 
+def test_spike_ratio_reads_detail_from_spike_detector():
+    # B의 급증 감지(media_monitor/spike.py)가 실제로 내보내는 형식. 여러 지표면 가장 큰 배수
+    e = _ev(1, ChangeType.SNS_SPIKE, source="youtube", reason="…", spikes={
+        "likes": {"value": 900, "usual": 100, "record": 110, "ratio": 9.0},
+        "views": {"value": 50000, "usual": 2000, "record": 2100, "ratio": 25.0},
+        "comments": {"value": 30, "usual": 0, "record": 12, "ratio": None},
+    })
+    assert features.spike_ratio(e) == 25.0
+
+
 # ---------- citations ----------
 def test_keep_grounded():
     s = ["가격 인하 [#1]", "근거 없음", "지어낸 근거 [#99]", "섞인 근거 [#1][#99]", "가격 인하 [#1]", "  묶음  [#1][#2] "]
