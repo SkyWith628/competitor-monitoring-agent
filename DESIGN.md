@@ -10,14 +10,14 @@
 ## 1. 목표와 범위
 
 ### 1.1 핵심 질문 (리포트가 매주 답해야 하는 것)
-1. **무엇이 바뀌었나?** — 신상품, 가격 인하/인상, 품절, 프로모션·기획전, 메인 배너
+1. **무엇이 바뀌었나?** — 신상품, 가격 인하/인상 (품절, 프로모션·기획전, 메인 배너는 공식몰 수집 보류로 현재 제외)
 2. **무엇이 화제인가?** — 뉴스(신규 매장, 실적, 협업, 모델), SNS 반응(좋아요·댓글 급증 게시물)
 3. **그래서 우리는?** — 브랜드별 전략 시그널 해석 + 액션 제안 (예: "유니클로 히트텍 가격 동결 → 스파오 웜테크 프로모션 시점 검토")
 
 ### 1.2 MVP 범위
 | 구분 | MVP (1~3주차) | 확장 (4주차~) |
 |---|---|---|
-| 사이트 | 메인/기획전 페이지, 카테고리별 신상품·가격 | 리뷰 수·평점 추이, 랭킹 |
+| 사이트 | 네이버 쇼핑 API로 브랜드별 신상품·가격 (메인/기획전 페이지는 공식몰 수집 허용 시) | 리뷰 수·평점 추이, 랭킹 |
 | 뉴스 | 네이버 뉴스 검색 API, Google News RSS | 언론사 직접 RSS, 공시(DART) |
 | SNS | 인스타그램 공식계정 게시물·반응수 | 유튜브, 틱톡, 커뮤니티 언급량 |
 | 분석 | 변화 분류 + 브랜드별 요약 + 주간 인사이트 | 이상치 탐지, 전주 대비 트렌드 차트 |
@@ -108,7 +108,7 @@ MINI/
 │   ├── site_monitor/                # 🅰 사이트 수집 & 변화 감지                  [A]
 │   │   ├── collectors/              #   spao / eightseconds / musinsa_standard / uniqlo
 │   │   ├── selectors.py             #   브랜드별 셀렉터 (사이트 개편 시 여기만 수정)
-│   │   ├── differ.py                #   전일 대비 → 신상품/가격/품절/재입고/기획전
+│   │   ├── differ.py                #   전일 대비 → 신상품/가격 (품절·재입고·기획전은 데이터 없어 현재 미발생)
 │   │   └── pipeline.py
 │   ├── media_monitor/               # 🅱 뉴스·SNS 수집                            [B]
 │   │   ├── news/                    #   naver.py, google_rss.py
@@ -150,7 +150,7 @@ class Brand(str, Enum):
 
 class SourceType(str, Enum):
     SITE_PRODUCT = "site_product"     # 상품 1개
-    SITE_PAGE = "site_page"           # 메인/기획전 페이지 스냅샷
+    SITE_PAGE = "site_page"           # 메인/기획전 페이지 스냅샷 (현재 미사용)
     NEWS = "news"
     SNS_POST = "sns_post"
 
@@ -174,9 +174,9 @@ class ChangeType(str, Enum):
     NEW_PRODUCT = "new_product"
     PRICE_DOWN = "price_down"
     PRICE_UP = "price_up"
-    SOLD_OUT = "sold_out"
-    RESTOCK = "restock"
-    PROMO_CHANGED = "promo_changed"   # 메인 배너/기획전 변경
+    SOLD_OUT = "sold_out"             # 현재 미발생 (재고 데이터 없음)
+    RESTOCK = "restock"               # 현재 미발생
+    PROMO_CHANGED = "promo_changed"   # 메인 배너/기획전 변경 (현재 미발생)
     NEWS = "news"
     SNS_SPIKE = "sns_spike"           # 반응수 급증 게시물
     SNS_NEW_POST = "sns_new_post"
@@ -202,6 +202,8 @@ class ChangeEvent(BaseModel):
 ## 6. 모듈별 상세 설계
 
 ### 6.1 사이트 수집 + 변화 감지 (A)
+> **현재 상태:** 공식몰이 robots.txt로 봇을 차단해 **네이버 쇼핑 검색 API**(`collectors/naver_shopping.py`)로 대체했다. 신상품·가격 변동만 감지하며, 품절·재입고·기획전은 범위 밖이다(상세는 `app/site_monitor/README.md`, `ROBOTS.md`). 아래는 공식몰 수집이 허용될 때의 원래 설계다.
+
 - `brands.yaml`에 브랜드별 **수집 대상 URL 목록**(메인, 신상품, 세일/기획전, 주요 카테고리)을 둔다. URL은 1주차에 직접 확인해 채운다.
 - 가능하면 **사이트가 내부적으로 호출하는 JSON API**(개발자도구 Network 탭)를 쓰고, 안 되면 Playwright로 렌더링 후 파싱.
 - 사이트 구조가 자주 바뀌므로 **셀렉터는 코드가 아니라 설정/상수로 분리**, 파싱 실패율이 임계치를 넘으면 슬랙 `#monitor-ops`로 경고.
@@ -250,7 +252,7 @@ class ChangeEvent(BaseModel):
 
 | 역할 | 담당 | 주요 산출물 | 협업 접점 |
 |---|---|---|---|
-| **A. 사이트 수집 & 변화 감지** | 팀원 1 | 4개 브랜드 사이트 수집기, `differ.py`, HTML fixture 테스트 | `RawItem`→D의 저장소, `ChangeEvent`→C |
+| **A. 사이트 수집 & 변화 감지** | 팀원 1 | 네이버 쇼핑 API 수집기(4개 브랜드), `differ.py`(신상품·가격), 테스트 | `RawItem`→D의 저장소, `ChangeEvent`→C |
 | **B. 뉴스·SNS 수집** | 팀원 2 | 뉴스/인스타/유튜브 수집기, 중복 제거, `brands.yaml` 키워드 관리, API 키 발급 | A와 `BaseCollector` 공유, C에 노이즈 기사 피드백 |
 | **C. LLM 분석 & 리포트 콘텐츠** | 팀원 3 | 분류·요약·인사이트 프롬프트와 파이프라인, 골든셋 평가, `report/builder.py` | A·B 이벤트 소비, D 템플릿에 데이터 전달 |
 | **D. 플랫폼·알림·통합 (PM 겸)** | 팀원 4 | 모델/DB/설정/CLI, 슬랙·메일, 리포트 템플릿, GitHub Actions, (옵션) 대시보드 | 전원 코드 통합, PR 리뷰 배정, 주간 데모 진행 |
