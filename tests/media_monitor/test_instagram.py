@@ -35,7 +35,7 @@ def test_missing_caption_and_hidden_likes():
     p2 = _collector().collect()[1]
     assert p2.title == "(캡션 없음 · IMAGE)"
     assert p2.body is None
-    assert p2.metrics["likes"] == 0
+    assert p2.metrics == {"comments": 0}  # 좋아요 숨김 → 0이 아니라 칸 자체가 없음 (댓글 0은 진짜 0)
     assert p2.image_url == "https://cdn.example.com/p2.jpg"
 
 

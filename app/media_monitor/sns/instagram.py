@@ -46,10 +46,11 @@ class InstagramCollector(BaseCollector):
                 url=p["permalink"],
                 title=_title_from(caption, p.get("media_type", "")),
                 body=caption or None,
-                metrics={
-                    "likes": p.get("like_count", 0),  # 좋아요 수를 숨긴 게시물은 like_count가 없음
-                    "comments": p.get("comments_count", 0),
-                },
+                # 좋아요 수를 숨긴 게시물은 like_count 가 아예 안 온다.
+                # 0(아무도 안 누름)과 '모름'은 다르므로 0으로 채우지 않고 칸을 비워 둔다
+                # → 급증 감지가 값이 있는 게시물끼리만 비교한다
+                metrics={name: p[key] for name, key in (("likes", "like_count"), ("comments", "comments_count"))
+                         if key in p},
                 # 영상(VIDEO)은 media_url 이 영상 파일이라 썸네일을 쓴다
                 image_url=p.get("thumbnail_url") or p.get("media_url"),
                 published_at=_to_datetime(p.get("timestamp")),
