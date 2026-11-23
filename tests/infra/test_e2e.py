@@ -1,4 +1,5 @@
 """[D] CLI 통합 테스트 — 이벤트 저장 → classify → report 전 구간. LLM·슬랙·메일은 가짜로 대체."""
+import json
 from datetime import datetime
 
 import pytest
@@ -25,7 +26,9 @@ def _fake_llm(model, system, user, schema, **kwargs):
                             event_ids=[1] if cited else [])
     if schema is insight_mod.Insight:
         return schema(tldr="스파오 가격 공세", insights=["인사이트"], actions=["액션"])
-    return schema.model_validate({"labels": [{"id": 1, "category": "가격전략", "importance": 5, "note": "25% 인하"}]})
+    ids = [json.loads(line)["id"] for line in user.splitlines()]
+    return schema.model_validate(
+        {"labels": [{"id": i, "category": "가격전략", "importance": 5, "note": "25% 인하"} for i in ids]})
 
 
 @pytest.fixture
@@ -129,3 +132,20 @@ def test_default_week_is_last_week_in_kst(env, monkeypatch):
     runner.invoke(cli, ["classify"])
     result = runner.invoke(cli, ["report", "--dry-run"])
     assert result.exit_code == 0 and f"report-{WEEK}.html" in result.output
+
+
+def test_rehearsal_seed_classify_report_clear(env, tmp_path):
+    from app.infra.sample_data import REHEARSAL_WEEK
+
+    _seed()  # 실제 이벤트 1건 — 리허설이 건드리면 안 된다
+    assert "12건 저장" in runner.invoke(cli, ["seed"]).output
+    assert "12건 저장" in runner.invoke(cli, ["seed"]).output  # 다시 넣어도 중복되지 않는다
+    assert len(repo.events_of_week(REHEARSAL_WEEK)) == 12
+    runner.invoke(cli, ["classify"])
+    assert runner.invoke(cli, ["report", "--week", REHEARSAL_WEEK]).exit_code == 0
+    assert len(env["slack"]) == 1 and repo.report_sent_at(REHEARSAL_WEEK)
+
+    assert "12건 삭제" in runner.invoke(cli, ["seed", "--clear"]).output
+    assert repo.events_of_week(REHEARSAL_WEEK) == [] and repo.report_sent_at(REHEARSAL_WEEK) is None
+    assert repo.last_report_tldr(WEEK) is None  # 리허설 리포트가 '지난주 요약'으로 새지 않는다
+    assert len(repo.events_of_week(WEEK)) == 1

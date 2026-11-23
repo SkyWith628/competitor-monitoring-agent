@@ -3,6 +3,15 @@ on:
   schedule:
     - cron: "0 23 * * 0"   # 매주 월 08:00 KST (일 UTC 23:00)
   workflow_dispatch:
+    inputs:
+      rehearsal:
+        description: "발송 리허설: 샘플 이벤트(2020-W01)로 분류→리포트→발송까지 돌리고 샘플을 지운다"
+        type: boolean
+        default: false
+      dry_run:
+        description: "발송하지 않고 리포트 파일만 만든다 (Artifacts 에서 내려받기)"
+        type: boolean
+        default: false
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -22,4 +31,16 @@ jobs:
       - name: DATABASE_URL 확인   # 없으면 러너의 임시 SQLite 에 쌓였다가 사라진다
         run: test -n "$DATABASE_URL" || { echo "::error::DATABASE_URL secret 이 없습니다"; exit 1; }
       - run: python -m app init-db
-      - run: python -m app report
+      - name: 리허설 — 샘플 이벤트 저장·분류
+        if: ${{ inputs.rehearsal }}
+        run: python -m app seed && python -m app classify
+      - run: python -m app report ${{ inputs.rehearsal && '--week 2020-W01' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: report
+          path: data/report-*
+          if-no-files-found: ignore
+      - name: 리허설 — 샘플 정리
+        if: ${{ always() && inputs.rehearsal }}
+        run: python -m app seed --clear

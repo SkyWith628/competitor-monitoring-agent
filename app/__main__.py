@@ -6,6 +6,7 @@
   python -m app classify                               # C (매일)
   python -m app report --week 2026-W47 [--dry-run]     # C + D (매주)
   python -m app cleanup                                # D (매일, 8주 지난 스냅샷 삭제)
+  python -m app seed [--clear]                         # D (발송 리허설용 샘플 이벤트)
 """
 from __future__ import annotations
 
@@ -162,6 +163,17 @@ def cleanup(keep_weeks: int = typer.Option(8, min=1, help="스냅샷 보관 주 
     typer.echo(f"스냅샷 {repo.purge_snapshots(keep_weeks)}건 삭제 ({keep_weeks}주 초과분)")
 
 
+@cli.command()
+def seed(clear: bool = typer.Option(False, help="샘플 이벤트와 리허설 리포트를 지우기만 한다")) -> None:
+    """발송 리허설: seed → classify → report --week <리허설 주차> → seed --clear"""
+    from app.infra import sample_data
+
+    if clear:
+        typer.echo(f"샘플 이벤트 {sample_data.clear()}건 삭제")
+    else:
+        typer.echo(f"샘플 이벤트 {sample_data.seed()}건 저장 (주차 {sample_data.REHEARSAL_WEEK})")
+
+
 def _empty_collection(source: Source, brand: Brand, before: dict[str, int]) -> str | None:
     """수집기가 예외 없이 빈 결과만 돌려준 경우(셀렉터 깨짐, 키 만료 등)를 찾아 사유를 돌려준다."""
     from app.infra import KST
@@ -173,8 +185,7 @@ def _empty_collection(source: Source, brand: Brand, before: dict[str, int]) -> s
         if sum(saved.values()) > 0:
             return None
         latest = repo.latest_collected_at(brand, SourceType.NEWS)
-        stale_before = datetime.now(KST).replace(tzinfo=None) - timedelta(days=NEWS_STALE_DAYS)
-        if latest is None or latest.replace(tzinfo=None) < stale_before:
+        if latest is None or latest < datetime.now(KST) - timedelta(days=NEWS_STALE_DAYS):
             return f"최근 {NEWS_STALE_DAYS}일간 신규 기사 없음"
         return None
     if sum(saved.values()) == 0:

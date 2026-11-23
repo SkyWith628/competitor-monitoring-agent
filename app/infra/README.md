@@ -34,3 +34,13 @@
 로컬에서 운영 DB 를 볼 때만 `.env` 에 `DATABASE_URL` 을 넣는다 — 넣은 채로 `collect` 를 돌리면 운영 데이터에 쓰인다.
 
 PostgreSQL 로 테스트: `TEST_DATABASE_URL=postgresql://... pytest tests/infra` (테이블을 지우므로 일회용 DB 만 지정)
+
+## 발송 리허설
+
+수집기가 완성되기 전에 분류 → 리포트 → 슬랙·메일 발송을 실제 키로 확인한다.
+GitHub **Actions → weekly-report → Run workflow** 에서 `rehearsal` 을 켜고 실행하면 샘플 이벤트 12건(주차 `2020-W01`, 제목에 `[샘플]`)을 넣어 실제 LLM 으로 분류·리포트하고 발송한 뒤 샘플과 그 리포트를 지운다. `dry_run` 도 켜면 발송 없이 리포트 파일만 Artifacts 로 남긴다.
+로컬에서는 `python -m app seed` → `classify` → `report --week 2020-W01 --dry-run` → `seed --clear`.
+
+## 시각 기준
+
+`detected_at`·`collected_at` 은 기본값이 KST 이고, 저장할 때도 KST 로 맞춘다(시간대 없는 값은 KST 로 본다). 주차 경계는 KST 월요일 00:00.

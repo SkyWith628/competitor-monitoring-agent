@@ -49,3 +49,4 @@ pytest -q
 | `python -m app classify` | C |
 | `python -m app report --week 2026-W47 --dry-run` | C + D |
 | `python -m app cleanup` | D |
+| `python -m app seed` / `seed --clear` | D (발송 리허설) |
