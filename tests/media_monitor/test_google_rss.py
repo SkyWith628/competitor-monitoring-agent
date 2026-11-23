@@ -1,4 +1,6 @@
 """[B] Google News RSS 수집기 테스트 — 인터넷 없이 가짜 기사 목록으로."""
+import pytest
+
 from app.core.models import Brand, SourceType
 from app.media_monitor.news.google_rss import GoogleNewsCollector
 
@@ -47,3 +49,18 @@ def test_keyword_match_ignores_case():
     c = GoogleNewsCollector(Brand.SPAO, {"keywords": ["SPAO"], "exclude": []})
     c._fetch = lambda query: SAMPLE.replace("스파오, 겨울", "spao, 겨울")
     assert [i.title for i in c.collect()] == ["spao, 겨울 신상 출시"]
+
+
+def test_html_instead_of_rss_raises():
+    """구글이 동의·차단 페이지(HTML)를 200으로 주면 조용히 0건이 아니라 오류로 알린다."""
+    c = _collector()
+    c._fetch = lambda query: "<html><body>consent</body></html>"
+    with pytest.raises(RuntimeError, match="RSS가 아닙니다"):
+        c.collect()
+
+
+def test_valid_feed_with_no_articles_is_ok():
+    """새 기사가 없는 날(정상 RSS, 기사 0건)은 오류가 아니다."""
+    c = _collector()
+    c._fetch = lambda query: '<?xml version="1.0"?><rss version="2.0"><channel><title>q</title></channel></rss>'
+    assert c.collect() == []

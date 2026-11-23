@@ -30,7 +30,13 @@ class GoogleNewsCollector(BaseCollector):
         query = " OR ".join(f'"{k}"' for k in self.config["keywords"]) + " when:7d"
 
         # ② 구글 뉴스에서 기사 목록 받아오기
-        feed = feedparser.parse(self._fetch(query))
+        text = self._fetch(query)
+        feed = feedparser.parse(text)
+        # 구글이 RSS 대신 HTML(동의·차단 안내)을 200으로 주면 feedparser 는 오류 없이 0건이 된다.
+        # 뉴스는 '새 기사 0건'이 정상인 날도 있어서 그대로 두면 며칠째 깨져도 모르므로, 예외로 알린다.
+        if feed.bozo or not feed.get("version"):
+            raise RuntimeError(f"구글 뉴스 응답이 RSS가 아닙니다 (차단·동의 페이지 가능성): "
+                               f"{feed.get('bozo_exception') or text[:80]!r}")
         keywords = [k.lower() for k in self.config["keywords"]]
         exclude = self.config.get("exclude") or []
 
