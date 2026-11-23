@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from calendar import timegm
 from datetime import datetime
 from urllib.parse import quote, urlsplit
@@ -14,6 +15,10 @@ from app.core.models import RawItem, SourceType
 from app.media_monitor.news.rules import has_excluded, mentions_brand
 
 RSS_URL = "https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
+# 구글 뉴스 RSS 는 검색 한 번에 최대 100건만 준다. 꽉 차면 7일치 중 오래된 기사가 잘렸을 수 있다
+RSS_LIMIT = 100
+
+log = logging.getLogger(__name__)
 
 # 구글 뉴스에 섞여 들어오는 뉴스가 아닌 사이트 (블로그·카페·쇼핑). 하위 도메인도 함께 차단된다.
 NON_NEWS_SITES = (
@@ -38,6 +43,10 @@ class GoogleNewsCollector(BaseCollector):
         if feed.bozo or not feed.get("version"):
             raise RuntimeError(f"구글 뉴스 응답이 RSS가 아닙니다 (차단·동의 페이지 가능성): "
                                f"{feed.get('bozo_exception') or text[:80]!r}")
+        if len(feed.entries) >= RSS_LIMIT:
+            # 유니클로는 평소 7일에 65~84건이라 감사제 같은 주간에는 한도에 닿는다 → 잘렸을 수 있음을 남긴다
+            log.warning("구글 뉴스 %s: 기사 %d건으로 RSS 한도(%d건)에 닿음 — 최근 7일 중 오래된 기사가 빠졌을 수 있음",
+                        self.brand.value, len(feed.entries), RSS_LIMIT)
         exclude = self.config.get("exclude") or []
 
         items: list[RawItem] = []
@@ -82,10 +91,14 @@ def _is_non_news(site_url: str) -> bool:
 
 
 def _strip_press(title: str, press: str | None) -> str:
-    """'기사 제목 - 머니투데이' → '기사 제목'"""
+    """'기사 제목 - 머니투데이' → '기사 제목'
+
+    언론사 이름이 제목 끝과 정확히 맞을 때만 뗀다. 모르는 채로 마지막 ' - ' 뒤를 지우면
+    '스파오 - 산리오 협업 컬렉션 공개' 같은 제목이 '스파오'로 잘린다.
+    """
     if press and title.endswith(f" - {press}"):
         return title.removesuffix(f" - {press}")
-    return title.rsplit(" - ", 1)[0] if " - " in title else title
+    return title
 
 
 def _to_datetime(t) -> datetime | None:

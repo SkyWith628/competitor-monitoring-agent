@@ -2,7 +2,7 @@
 import pytest
 
 from app.core.models import Brand, SourceType
-from app.media_monitor.news.google_rss import GoogleNewsCollector
+from app.media_monitor.news.google_rss import RSS_LIMIT, GoogleNewsCollector, _strip_press
 
 SAMPLE = """<?xml version="1.0"?><rss><channel>
 <item><title>스파오, 겨울 신상 출시 - 머니투데이</title><link>https://news.google.com/a</link>
@@ -59,3 +59,30 @@ def test_valid_feed_with_no_articles_is_ok():
     c = _collector()
     c._fetch = lambda query: '<?xml version="1.0"?><rss version="2.0"><channel><title>q</title></channel></rss>'
     assert c.collect() == []
+
+
+def test_press_name_is_stripped_only_when_it_matches():
+    assert _strip_press("스파오, 겨울 신상 출시 - 머니투데이", "머니투데이") == "스파오, 겨울 신상 출시"
+    # 언론사 이름이 안 맞으면 제목을 그대로 둔다 (예전엔 마지막 ' - ' 뒤를 지워서 '스파오'만 남았음)
+    assert _strip_press("스파오 - 산리오 협업 컬렉션 공개", None) == "스파오 - 산리오 협업 컬렉션 공개"
+    assert _strip_press("스파오 - 산리오 협업 컬렉션 공개", "연합뉴스") == "스파오 - 산리오 협업 컬렉션 공개"
+
+
+def _feed(n: int) -> str:
+    items = "".join(f"<item><title>스파오 소식 {i} - 언론</title><link>https://news.google.com/{i}</link>"
+                    f'<source url="https://press.example.com">언론</source></item>' for i in range(n))
+    return f'<?xml version="1.0"?><rss version="2.0"><channel><title>q</title>{items}</channel></rss>'
+
+
+def test_warns_when_feed_hits_rss_limit(caplog):
+    c = _collector()
+    c._fetch = lambda query: _feed(RSS_LIMIT)
+    assert len(c.collect()) == RSS_LIMIT  # 수집은 그대로 하고
+    assert "RSS 한도" in caplog.text      # 잘렸을 수 있다고 경고만 남긴다
+
+
+def test_no_warning_below_rss_limit(caplog):
+    c = _collector()
+    c._fetch = lambda query: _feed(RSS_LIMIT - 1)
+    c.collect()
+    assert "RSS 한도" not in caplog.text
