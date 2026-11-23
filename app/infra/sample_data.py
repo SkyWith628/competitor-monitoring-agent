@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
-from app.core.models import KST, Brand, ChangeEvent, ChangeType
+from app.core.models import Brand, ChangeEvent, ChangeType
 from app.infra.storage import repo
 
 REHEARSAL_WEEK = "2020-W01"
@@ -33,7 +33,8 @@ def seed() -> int:
     """샘플 이벤트를 미분류 상태로 저장한다. 이미 있던 샘플은 지우고 다시 넣는다."""
     clear()
     year, week = REHEARSAL_WEEK.split("-W")
-    monday = datetime.combine(date.fromisocalendar(int(year), int(week), 1), time(6), tzinfo=KST)
+    # 이 프로젝트의 감지 시각은 시간대 없는 한국 시각이다 (app/infra/timeutil.py)
+    monday = datetime.combine(date.fromisocalendar(int(year), int(week), 1), time(6))
     events = [
         ChangeEvent(brand=brand, change_type=change_type, title=f"[샘플] {title}", detail=detail,
                     url=f"{SAMPLE_URL}{n}", detected_at=monday + timedelta(days=n % 7))
@@ -44,7 +45,7 @@ def seed() -> int:
 
 
 def clear() -> int:
-    """샘플 이벤트와 리허설 주차 리포트를 지운다. 삭제한 이벤트 수 반환."""
+    """샘플 이벤트와 리허설 주차의 리포트·발송 기록을 지운다. 삭제한 이벤트 수 반환."""
     ids = [e.id for e in repo.events_of_week(REHEARSAL_WEEK) if is_sample(e)]
     repo.delete_events(ids)
     repo.delete_report(REHEARSAL_WEEK)

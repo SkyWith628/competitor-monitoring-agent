@@ -1,25 +1,40 @@
-"""[D] infra 테스트 공용 DB. 기본은 임시 SQLite, TEST_DATABASE_URL 이 있으면 그 PostgreSQL 로 같은 테스트를 돈다.
-
-실수로 운영 DB 를 건드리지 않도록 환경의 DATABASE_URL 은 항상 무시한다.
-TEST_DATABASE_URL 의 테이블은 테스트마다 모두 지우므로 일회용 DB 만 지정할 것.
-"""
 import os
 
 import pytest
 
 from app.infra.storage import db
+from app.infra.timeutil import use_korean_time
+
+
+@pytest.fixture(autouse=True)
+def _korean_time(monkeypatch):
+    """CLI가 실행 때 맞추는 것과 같은 시간대에서 테스트한다. 운영 워크플로 전용 설정은 끈다."""
+    use_korean_time()
+    monkeypatch.delenv("REQUIRE_DATABASE_URL", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """슬랙 재시도 사이의 대기를 없앤다. 테스트가 실제로 몇 초씩 기다리지 않게."""
+    from app.infra.notify import slack
+
+    monkeypatch.setattr(slack, "_sleep", lambda seconds: None, raising=False)
 
 
 @pytest.fixture
-def database(tmp_path, monkeypatch):
-    test_url = os.getenv("TEST_DATABASE_URL")
-    if test_url:
-        monkeypatch.setenv("DATABASE_URL", test_url)
-        db.metadata.drop_all(db.engine())
-    else:
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
-    db.init_db()
-    yield
-    if test_url:
-        db.metadata.drop_all(db.engine())
+def tmp_db(tmp_path, monkeypatch):
+    """테스트마다 빈 DB를 쓴다. 기본은 임시 SQLite 파일.
+
+    `TEST_DATABASE_URL`을 주면 그 PostgreSQL에서 돈다(방언 확인용, 테이블을 비우므로 테스트 전용 DB만!).
+    """
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        monkeypatch.delenv("DATABASE_URL", raising=False)  # 로컬 .env의 운영 DB를 건드리지 않도록
+        path = tmp_path / "monitor.db"
+        monkeypatch.setattr(db, "DB_PATH", path)
+        return path
+    monkeypatch.setenv("DATABASE_URL", url)
+    with db.connect() as conn:
+        tables = ", ".join(t.name for t in db.metadata.sorted_tables)  # 새 테이블이 생겨도 빠지지 않게
+        conn.execute(f"TRUNCATE {tables} RESTART IDENTITY")
+    return url
