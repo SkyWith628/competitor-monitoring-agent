@@ -20,7 +20,7 @@ web/                 🅳 D  대시보드·리포트 열람 웹(Next.js → Verc
 
 | 역할 | 폴더 | 만드는 것 | 넘겨주는 것 → 받는 사람 |
 |---|---|---|---|
-| 🅰 A | [app/site_monitor/](app/site_monitor/README.md) | 네이버 쇼핑 API 수집기, 전일 대비 diff(신상품·가격 변동) | `RawItem` → D 저장소 / `ChangeEvent` → C |
+| 🅰 A | [app/site_monitor/](app/site_monitor/README.md) | WHO.A.U 공식몰 직접 수집기, 전일 대비 diff(신상품·가격 변동) | `RawItem` → D 저장소 / `ChangeEvent` → C |
 | 🅱 B | [app/media_monitor/](app/media_monitor/README.md) | 네이버·Google 뉴스, 인스타·유튜브, 중복 제거, 반응 급증 감지 | `RawItem` → D 저장소 / `ChangeEvent` → C |
 | 🅲 C | [app/analysis/](app/analysis/README.md) | 분류·요약·인사이트 프롬프트와 파이프라인, 골든셋 평가 | `WeeklyReport` → D |
 | 🅳 D | [app/infra/](app/infra/README.md) | DB·repo, 슬랙/메일 렌더링·발송, CLI, GitHub Actions | 최종 리포트 → 팀 슬랙·메일 |
