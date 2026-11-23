@@ -38,7 +38,6 @@ export function formatTime(iso: string | null | undefined): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} KST`;
 }
 
-export const dayOf = (iso: string) => iso.slice(0, 10);
 
 /** 지금의 한국 시각을 DB와 같은 모양("YYYY-MM-DDTHH:MM:SS")으로. */
 export function nowKst(): string {
@@ -75,4 +74,30 @@ export function safeUrl(url: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/*
+ * 주간 리포트의 발송 상태. `python -m app status` 와 같은 기준이다 (app/infra/storage/repo.py 의 report_status).
+ *   - reports.sent_at 은 첫 메시지가 나간 순간 찍힌다. 그래서 sent_at 만 보면 슬랙만 나가고 메일이 실패한
+ *     주차도 "발송됨"으로 보인다.
+ *   - report_sends 에 채널 이름("slack", "email")이 있어야 그 채널이 끝까지 나간 것이다.
+ */
+export const REPORT_CHANNELS = ["slack", "email"] as const;
+export const CHANNEL_LABEL: Record<string, string> = { slack: "슬랙", email: "메일" };
+
+export type SendState = { state: "sent" | "partial" | "unsent"; missing: string[] };
+
+export function sendState(sentAt: string | null, channels: string[]): SendState {
+  const missing = REPORT_CHANNELS.filter((c) => !channels.includes(c));
+  if (sentAt && missing.length === 0) return { state: "sent", missing: [] };
+  if (sentAt || channels.length > 0) return { state: "partial", missing };
+  return { state: "unsent", missing };
+}
+
+/** 화면에 쓰는 문구와 색. 모양(● ◐ ▲)으로도 구분한다. */
+export function sendStateView(s: SendState): { text: string; className: string } {
+  if (s.state === "sent") return { text: "● 발송됨", className: "state good" };
+  if (s.state === "unsent") return { text: "▲ 미발송", className: "state bad" };
+  const missing = s.missing.map((c) => CHANNEL_LABEL[c] ?? c).join(", ");
+  return { text: `◐ 일부 발송 (미발송: ${missing})`, className: "state bad" };
 }
