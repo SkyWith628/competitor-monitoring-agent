@@ -19,7 +19,10 @@ def run_news(brand: Brand) -> list[ChangeEvent]:
         items += cls(brand, cfg).collect()
     # 이미 저장된 기사를 앞으로: 같은 소식의 새 기사가 와도 저장된 기사가 대표로 남아 다시 이벤트가 되지 않는다
     # (구글은 매일 최근 7일을 다시 가져오므로, 이어지는 기사가 대표가 되면 같은 소식이 날마다 새로 올라옴)
-    items.sort(key=lambda i: not repo.exists(i))  # 안정 정렬: 같은 그룹 안에서는 원래 순서 유지
+    # 그다음은 제목에 브랜드명이 있는 기사를 앞으로: 같은 소식이면 '[식음료 소식] KT&G·풀무원·농심' 같은
+    # 묶음 기사보다 '농심, 무신사 스탠다드와 새우깡 티셔츠' 같은 제목이 대표가 된다
+    keywords = [k.lower() for k in cfg["keywords"]]
+    items.sort(key=lambda i: (not repo.exists(i), not any(k in i.title.lower() for k in keywords)))  # 안정 정렬
     new_items = [i for i in dedup(items, ignore=cfg["keywords"]) if not repo.exists(i)]
     events = [ChangeEvent(brand=brand, change_type=ChangeType.NEWS, title=i.title, url=i.url,
                           detail={"source": i.source}) for i in new_items]

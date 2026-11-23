@@ -101,3 +101,35 @@ def test_real_paraphrases_of_same_story_are_merged():
               "희망브리지·유니클로, 거제시 감사패 수상",
               "희망브리지·유니클로, 거제시 수해 복구·재난 예방 공로 감사패"]
     assert len(dedup(_titles(Brand.UNIQLO, uniqlo), ignore=["유니클로", "UNIQLO"])) == 3
+
+
+# ── 3) 요약까지 보는 비교: 제목이 아주 달라도 같은 보도자료면 하나로 ─────────────────────
+def _with_body(i: int, title: str, body: str | None) -> RawItem:
+    return RawItem(brand=Brand.MUSINSA_STANDARD, source_type=SourceType.NEWS, source="naver_news",
+                   external_id=str(i), url=f"https://news{i}.example.com/a", title=title, body=body)
+
+
+SAEUKKANG = "농심이 새우깡 출시 55주년을 맞아 무신사 스탠다드와 손잡고 커스텀 티셔츠 서비스를 선보인다."
+
+
+def test_same_press_release_with_different_titles_is_merged():
+    # 실데이터(2026-11-23 네이버): 제목은 겹치는 말이 거의 없지만 요약은 같은 소식
+    items = [_with_body(0, "농심, 무신사와 이색 마케팅 전개", SAEUKKANG),
+             _with_body(1, "[식음료 소식] KT&Gㆍ풀무원ㆍ농심", "◇ " + SAEUKKANG + " 서울숲점과 명동중앙점에서"),
+             _with_body(2, "새우깡을 입는 시대…농심, '먹거리' 밖으로", "18일 " + SAEUKKANG)]
+    assert len(dedup(items, ignore=MUSINSA)) == 1
+
+
+def test_few_common_words_do_not_merge_different_stories():
+    # 실데이터에서 '오프라인·전국·확대' 3단어만 겹쳐 잘못 묶이던 쌍 → 4단어 이상 겹쳐야 같은 소식
+    items = [_with_body(0, "무신사 스탠다드, 하반기 슈퍼세일 매출 63% 증가",
+                        "무신사 스탠다드는 하반기 슈퍼세일 기간 매출이 63% 늘었다. 전국 오프라인 매장 확대 효과다."),
+             _with_body(1, "제주까지 뻗은 무신사 스탠다드…전국 오프라인 거점 확대", None)]
+    assert len(dedup(items, ignore=MUSINSA)) == 2
+
+
+def test_similar_summary_but_different_place_is_kept():
+    body = "무신사 스탠다드가 오는 26일 국내 45번째 매장을 열고 지역 고객과의 접점을 넓힌다고 밝혔다."
+    items = [_with_body(0, "무신사 스탠다드, 제주 첫 매장 오픈", body),
+             _with_body(1, "무신사 스탠다드, 부산 첫 매장 오픈", body)]
+    assert len(dedup(items, ignore=MUSINSA)) == 2
