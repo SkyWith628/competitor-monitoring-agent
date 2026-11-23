@@ -40,7 +40,11 @@ brands:
       urls: []
     news:
       keywords: ["유니클로", "UNIQLO"]
-      exclude: []
+      # 실데이터(2026-11-23)에서 유니클로가 스치듯 나온 무관 기사만 뺀다
+      # - 코웨이: 펀드매니저 추천 종목 기사 (같이 뽑힌 종목의 모기업이 유니클로)
+      # - 유니클로 필드: 다저스 경기장 이름
+      # 한 번씩만 나온 애매한 기사(입점 쇼핑몰 언급 등)는 C의 LLM 분류(무관 필터)에 맡긴다
+      exclude: ["코웨이", "유니클로 필드", "UNIQLO Field"]
     sns:
       instagram: ""
       youtube_channel_id: ""
