@@ -1,4 +1,7 @@
-"""[B] SNS 파이프라인 테스트 — 수집기 하나가 실패해도 나머지는 저장되는지."""
+"""[B] SNS 파이프라인 테스트 — 수집기 하나가 실패·미구현이어도 나머지는 저장되는지.
+
+(최근 7일 기준 테스트는 #20의 test_pipeline.py. 같은 파일명이면 두 PR이 머지 때 충돌해서 파일을 나눔)
+"""
 import pytest
 
 from app.core.models import Brand, ChangeType, RawItem, SourceType
