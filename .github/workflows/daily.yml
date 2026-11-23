@@ -14,13 +14,22 @@ jobs:
       IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       SLACK_WEBHOOK_OPS: ${{ secrets.SLACK_WEBHOOK_OPS }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # TODO(D): 운영 DB(PostgreSQL) 전환 시 사용
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Supabase PostgreSQL
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e . && playwright install --with-deps chromium
+      - name: DATABASE_URL 확인   # 없으면 러너의 임시 SQLite 에 쌓였다가 사라진다
+        run: test -n "$DATABASE_URL" || { echo "::error::DATABASE_URL secret 이 없습니다"; exit 1; }
+      - run: python -m app init-db
+        id: db
       - run: python -m app collect --source site
       - run: python -m app collect --source news
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
       - run: python -m app collect --source sns
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
       - run: python -m app classify
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
+      - run: python -m app cleanup
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}

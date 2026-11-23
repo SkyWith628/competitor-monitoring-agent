@@ -19,4 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e .
+      - name: DATABASE_URL 확인   # 없으면 러너의 임시 SQLite 에 쌓였다가 사라진다
+        run: test -n "$DATABASE_URL" || { echo "::error::DATABASE_URL secret 이 없습니다"; exit 1; }
+      - run: python -m app init-db
       - run: python -m app report
