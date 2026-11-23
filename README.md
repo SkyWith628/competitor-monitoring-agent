@@ -15,6 +15,7 @@ app/
 config/brands.yaml   🅱 B 주도 (사이트 URL은 A)
 tests/<역할 폴더>/    각자 자기 폴더 테스트
 .github/             🅳 D  CI·스케줄·CODEOWNERS
+web/                 🅳 D  대시보드·리포트 열람 웹(Next.js → Vercel), 팀원만 로그인
 ```
 
 | 역할 | 폴더 | 만드는 것 | 넘겨주는 것 → 받는 사람 |

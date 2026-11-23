@@ -1,0 +1,131 @@
+/* 색은 app/infra/dashboard(파이썬 정적 대시보드)와 같은 값을 쓴다. 브랜드 4색은 밝은·어두운 테마 각각 검증한 조합이다. */
+:root {
+  color-scheme: light dark;
+  --page: #f9f9f7; --surface: #fcfcfb; --wash: #f0efec;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.1);
+  --link: #1c5cab; --ok: #006300; --alert: #b92d2d;
+  --series-1: #2a78d6; --series-2: #d17236; --series-3: #2f6b12; --series-4: #a31583;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --wash: #2c2c2a;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #979590;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.1);
+    --link: #86b6ef; --ok: #0ca30c; --alert: #e66767;
+    --series-1: #3987e5; --series-2: #c98500; --series-3: #35802a; --series-4: #ca358b;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", sans-serif;
+}
+a { color: var(--link); text-underline-offset: 2px; }
+h1 { font-size: 22px; line-height: 1.3; margin: 0; }
+h2 { font-size: 16px; margin: 0; }
+h3 { font-size: 15px; margin: 16px 0 4px; }
+p { margin: 4px 0 0; }
+ul, ol { margin: 8px 0 0; padding-left: 20px; }
+.muted { color: var(--muted); font-size: 13px; }
+.empty { color: var(--muted); padding: 16px 0 4px; }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.topbar {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.topbar nav { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+.topbar nav a { color: var(--ink-2); text-decoration: none; padding: 4px 0; }
+.topbar nav a:hover { color: var(--ink); text-decoration: underline; }
+.topbar .brandmark { color: var(--ink); font-weight: 700; }
+.account { display: flex; gap: 12px; align-items: center; margin: 0; min-width: 0; }
+.account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+.linklike { background: none; border: 0; padding: 4px 0; color: var(--link); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+.page { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 16px; }
+.page-head { display: grid; gap: 2px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: grid; gap: 2px; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 26px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.tile .value a { color: inherit; }
+.state { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.state.good { color: var(--ok); }
+.state.bad { color: var(--alert); font-weight: 600; }
+
+.chip { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--wash); color: var(--ink-2); font-size: 12px; line-height: 20px; }
+.events, .reports, .top { list-style: none; padding: 0; margin: 8px 0 0; }
+.events li, .reports li { padding: 12px 0; border-top: 1px solid var(--grid); }
+.events li:first-child, .reports li:first-child { border-top: 0; }
+.events .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; color: var(--muted); font-size: 12px; }
+.title { font-weight: 600; overflow-wrap: anywhere; }
+.note { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
+.reports li { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: baseline; }
+.reports .week { font-weight: 700; font-variant-numeric: tabular-nums; }
+.reports p { grid-column: 1 / -1; color: var(--ink-2); margin: 0; overflow-wrap: anywhere; }
+.top { counter-reset: top; }
+.top li { counter-increment: top; padding: 12px 0 12px 32px; border-top: 1px solid var(--grid); position: relative; }
+.top li:first-child { border-top: 0; }
+.top li::before { content: counter(top); position: absolute; left: 0; top: 12px; width: 22px; height: 22px; border-radius: 50%; background: var(--wash); color: var(--ink-2); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.report .tldr p { font-size: 17px; line-height: 1.6; }
+.report li { overflow-wrap: anywhere; }
+
+.table-wrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-top: 1px solid var(--grid); white-space: nowrap; font-weight: 400; }
+thead th { border-top: 0; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+.chart { margin: 12px 0 0; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.legend li, .tooltip .row { display: flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.swatch.s1 { background: var(--series-1); } .swatch.s2 { background: var(--series-2); }
+.swatch.s3 { background: var(--series-3); } .swatch.s4 { background: var(--series-4); }
+.chart-plot { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart path.s1 { fill: var(--series-1); } .chart path.s2 { fill: var(--series-2); }
+.chart path.s3 { fill: var(--series-3); } .chart path.s4 { fill: var(--series-4); }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .hoverband { fill: var(--wash); }
+.tooltip {
+  position: absolute; top: 4px; z-index: 1; pointer-events: none; display: grid; gap: 2px; min-width: 150px;
+  padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14); font-size: 13px; color: var(--ink-2);
+}
+.tooltip[data-side="right"] { transform: translateX(12px); }
+.tooltip[data-side="left"] { transform: translateX(calc(-100% - 12px)); }
+.tooltip strong { color: var(--ink); }
+.tooltip b { margin-left: auto; padding-left: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--link); font-size: 13px; width: fit-content; }
+
+.login { max-width: 380px; margin: 12vh auto 0; padding: 0 16px; display: grid; gap: 8px; }
+.login-form { display: grid; gap: 8px; margin-top: 12px; }
+.login-form label { font-size: 13px; color: var(--ink-2); }
+.login-form input[type="email"] { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); }
+.login-form button { font: inherit; font-weight: 600; padding: 10px 12px; border-radius: 8px; border: 0; background: var(--ink); color: var(--page); cursor: pointer; }
+.login-form button:disabled { opacity: 0.6; cursor: default; }
+.notice { min-height: 1.6em; font-size: 14px; }
+.notice.ok { color: var(--ok); }
+.notice.error { color: var(--alert); }
+
+@media (prefers-reduced-motion: no-preference) { .tooltip { transition: left 80ms linear; } }
+
+.tile .value { white-space: nowrap; }
+/* 좁은 화면: 차트를 읽을 수 있는 크기로 두고 좌우로 민다. 툴팁은 막대를 가리지 않게 차트 아래에 둔다. */
+@media (max-width: 640px) {
+  .chart-plot { overflow-x: auto; display: flex; flex-direction: column; }
+  .chart svg { min-width: 600px; }
+  .tooltip, .tooltip[data-side] { position: sticky; left: 0 !important; transform: none; order: 2; margin-top: 8px; box-shadow: none; width: 100%; grid-template-columns: 1fr 1fr; transition: none; }
+  .tooltip strong, .tooltip .muted { grid-column: auto; }
+  .tile .value { font-size: 22px; }
+}
+.report { display: grid; gap: 16px; }

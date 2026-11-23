@@ -102,7 +102,7 @@ GitHub **Actions → weekly-report → Run workflow** 에서 `rehearsal` 을 켜
 | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `IG_ACCESS_TOKEN`, `IG_BUSINESS_ACCOUNT_ID`, `YOUTUBE_API_KEY` | Secret | B 수집기용 | 뉴스·SNS API |
 | `SMTP_HOST`, `SMTP_PORT` | Variable | 선택 | 기본 `smtp.gmail.com` / `587`. 포트 465면 처음부터 TLS로 접속하고, 그 밖의 포트는 STARTTLS를 쓴다. 두 경우 모두 서버 인증서를 검증한다 |
 | `MAIL_FROM_NAME` | Variable | 선택 | 보내는 사람 표시 이름. 기본 `경쟁사 모니터링` |
-| `REPORT_URL` | Variable | 선택 | 슬랙 "전체 리포트 보기" 버튼 링크 |
+| `REPORT_URL` | Variable | 선택 | 슬랙 "전체 리포트 보기" 버튼 링크. 웹 대시보드를 배포했으면 `https://<배포 주소>/reports/latest` ([web/README.md](../../web/README.md)) |
 
 ## 자동 실행
 
