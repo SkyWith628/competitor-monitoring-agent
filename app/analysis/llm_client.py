@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from typing import TypeVar
 
@@ -14,6 +15,7 @@ CLASSIFY_MODEL = env("CLASSIFY_MODEL", "claude-haiku-5-5")
 REPORT_MODEL = env("REPORT_MODEL", "claude-opus-5-5")
 
 T = TypeVar("T", bound=BaseModel)
+log = logging.getLogger(__name__)
 
 
 class LLMRefusal(RuntimeError):
@@ -29,7 +31,9 @@ def _call(model: str, system: str, user: str, max_tokens: int, effort: str):
     kwargs = {
         "model": model,
         "max_tokens": max_tokens,
-        "system": system,
+        # 시스템 프롬프트(=prompts/*.md)는 배치마다 같으므로 캐시해 재사용한다.
+        # 모델별 최소 길이보다 짧으면 캐시되지 않을 뿐 오류는 없다.
+        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": user}],
         "output_config": {"effort": effort},
     }
@@ -47,9 +51,9 @@ def ask_json(model: str, system: str, user: str, schema: type[T], *,
     last_err: Exception | None = None
     for _ in range(retries + 1):
         resp = _call(model, system, user, max_tokens, effort)
-        if resp.stop_reason == "refusal":
+        log_usage(getattr(resp, "model", None) or model, resp.usage)  # 대체 모델로 응답했으면 그 모델로
+        if resp.stop_reason == "refusal":  # 거절돼도 토큰은 썼으니 기록은 먼저
             raise LLMRefusal(str(resp.stop_details))
-        log_usage(model, resp.usage)
         text = "".join(b.text for b in resp.content if b.type == "text")
         try:
             return schema.model_validate(json.loads(_strip_fence(text)))
@@ -66,5 +70,19 @@ def _strip_fence(text: str) -> str:
 
 
 def log_usage(model: str, usage) -> None:
-    # TODO(C): infra.storage.repo.save_llm_call(model, usage.input_tokens, usage.output_tokens)
-    pass
+    """토큰 사용량을 llm_calls 에 기록. 기록 실패가 분석을 멈추게 하지는 않는다.
+
+    입력 토큰은 캐시에서 읽은/캐시에 쓴 토큰까지 합친 실제 처리량으로 남긴다
+    (usage.input_tokens 는 캐시되지 않은 부분만 센다).
+    """
+    input_tokens = (
+        (usage.input_tokens or 0)
+        + (getattr(usage, "cache_read_input_tokens", None) or 0)
+        + (getattr(usage, "cache_creation_input_tokens", None) or 0)
+    )
+    try:
+        from app.infra.storage import repo
+
+        repo.save_llm_call(model, input_tokens, usage.output_tokens or 0)
+    except Exception:  # DB 문제로 리포트가 실패하면 안 된다
+        log.warning("LLM 사용량 기록 실패 (model=%s)", model, exc_info=True)
