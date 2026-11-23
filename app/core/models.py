@@ -4,16 +4,10 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
-
-KST = timezone(timedelta(hours=9))  # 서버 위치(GitHub Actions 는 UTC)와 무관하게 모든 시각의 기준
-
-
-def now_kst() -> datetime:
-    return datetime.now(KST)
 
 
 class Brand(str, Enum):
@@ -46,7 +40,7 @@ class RawItem(BaseModel):
     metrics: dict[str, int] = Field(default_factory=dict)  # {"likes": 1200, "comments": 35}
     image_url: str | None = None
     published_at: datetime | None = None
-    collected_at: datetime = Field(default_factory=now_kst)
+    collected_at: datetime = Field(default_factory=datetime.now)
 
 
 class ChangeType(str, Enum):
@@ -80,7 +74,7 @@ class ChangeEvent(BaseModel):
     title: str
     detail: dict = Field(default_factory=dict)  # {"before": 39900, "after": 29900}
     url: str
-    detected_at: datetime = Field(default_factory=now_kst)
+    detected_at: datetime = Field(default_factory=datetime.now)
     # --- C(분석)가 채움 ---
     category: Category | None = None
     importance: int | None = Field(default=None, ge=1, le=5)
