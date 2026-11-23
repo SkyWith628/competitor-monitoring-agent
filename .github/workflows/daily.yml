@@ -23,12 +23,13 @@ jobs:
       - name: DATABASE_URL 확인   # 없으면 러너의 임시 SQLite 에 쌓였다가 사라진다
         run: test -n "$DATABASE_URL" || { echo "::error::DATABASE_URL secret 이 없습니다"; exit 1; }
       - run: python -m app init-db
+        id: db
       - run: python -m app collect --source site
       - run: python -m app collect --source news
-        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
       - run: python -m app collect --source sns
-        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
       - run: python -m app classify
-        if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}   # 앞 수집 단계가 실패해도 계속 (DB 준비 실패 시에는 중단)
       - run: python -m app cleanup
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.db.outcome == 'success' }}
