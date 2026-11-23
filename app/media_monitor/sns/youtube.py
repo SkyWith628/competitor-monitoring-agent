@@ -24,7 +24,7 @@ class YoutubeCollector(BaseCollector):
 
         # ① 채널의 "업로드 영상 목록"(uploads 재생목록) ID 찾기
         channel = self._get("channels", {"part": "contentDetails", "id": channel_id})
-        if not channel["items"]:
+        if not channel.get("items"):  # 없는 채널이면 items 가 비거나 아예 빠져서 온다
             raise RuntimeError(f"유튜브 채널을 찾을 수 없습니다: {channel_id}")
         uploads = channel["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
@@ -49,11 +49,11 @@ class YoutubeCollector(BaseCollector):
                 external_id=v["id"],
                 url=f"https://www.youtube.com/watch?v={v['id']}",
                 title=s["title"],
-                metrics={
-                    "views": int(stats.get("viewCount", 0)),
-                    "likes": int(stats.get("likeCount", 0)),  # 좋아요 수를 숨긴 영상은 0
-                    "comments": int(stats.get("commentCount", 0)),
-                },
+                # 좋아요(댓글)를 숨긴 영상은 likeCount(commentCount)가 아예 안 온다.
+                # 0(아무도 안 누름)과 '모름'은 다르므로 0으로 채우지 않고 칸을 비워 둔다
+                metrics={name: int(stats[key]) for name, key in
+                         (("views", "viewCount"), ("likes", "likeCount"), ("comments", "commentCount"))
+                         if key in stats},
                 image_url=s.get("thumbnails", {}).get("high", {}).get("url"),
                 published_at=_to_datetime(s.get("publishedAt")),
             ))
@@ -65,9 +65,20 @@ class YoutubeCollector(BaseCollector):
         if not key:
             raise RuntimeError(".env 에 YOUTUBE_API_KEY 를 채워야 합니다")
         self.throttle()
-        r = httpx.get(f"{API}/{endpoint}", params={**params, "key": key}, timeout=10)
-        r.raise_for_status()
+        # 키를 주소(?key=)가 아니라 헤더로 보낸다. 주소에 넣으면 요청이 실패했을 때
+        # httpx 오류 메시지(요청 주소 포함)에 키가 그대로 찍혀 슬랙·Actions 로그로 새어 나간다
+        r = httpx.get(f"{API}/{endpoint}", params=params, headers={"X-Goog-Api-Key": key}, timeout=10)
+        if r.status_code != 200:
+            raise RuntimeError(f"YouTube API 오류 {r.status_code}: {_error_message(r)}")
         return r.json()
+
+
+def _error_message(r: httpx.Response) -> str:
+    """Google 오류 응답(JSON)의 message 만 꺼낸다. JSON 이 아니면(예: 502 HTML) 앞부분만."""
+    try:
+        return r.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        return r.text[:200]
 
 
 def _to_datetime(s: str | None) -> datetime | None:
