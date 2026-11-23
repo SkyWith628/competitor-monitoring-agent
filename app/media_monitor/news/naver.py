@@ -87,7 +87,14 @@ def _clean(text: str) -> str:
 
 
 def _to_datetime(s: str | None) -> datetime | None:
-    """'Wed, 18 Nov 2026 11:00:00 +0900' → 로컬 시간 datetime (collected_at과 형식 맞춤)"""
+    """'Wed, 18 Nov 2026 11:00:00 +0900' → 로컬 시간 datetime (collected_at과 형식 맞춤)
+
+    없거나 형식이 이상하면 None('날짜 모름'). 예외를 던지면 기사 한 건 때문에
+    그 브랜드의 네이버 수집 전체가 실패하므로, 그 기사만 날짜 없이 수집한다.
+    """
     if not s:
         return None
-    return parsedate_to_datetime(s).astimezone().replace(tzinfo=None)
+    try:
+        return parsedate_to_datetime(s).astimezone().replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
