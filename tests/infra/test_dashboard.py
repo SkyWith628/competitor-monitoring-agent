@@ -132,7 +132,7 @@ def test_render_counts_per_brand():
     assert "감지된 변화 없음" in _card(html, "에잇세컨즈")
 
     # 차트: 어제 칸에 스파오 1 · 유니클로 1
-    assert 'data-day="2026-11-21" data-counts="1,0,0,1" data-total="2"' in html
+    assert 'data-day="2026-11-21" data-counts="1,0,0,1,0" data-total="2"' in html
     assert html.count('class="hit"') == 30
     # 주요 이벤트·차트와 섞이지 않게 창 밖 날짜는 어디에도 없다
     assert "2026-10-08" not in html
@@ -211,7 +211,7 @@ def test_render_high_importance_only_inside_window():
     listing = _section(html, "h-events")
     assert "창 안 첫날" in listing
     assert "창 밖 하루 전" not in listing and "미래 날짜" not in listing
-    assert 'data-day="2026-10-24" data-counts="1,0,0,0" data-total="1"' in html  # 차트의 첫 칸과 같은 창
+    assert 'data-day="2026-10-24" data-counts="1,0,0,0,0" data-total="1"' in html  # 차트의 첫 칸과 같은 창
 
 
 def test_render_buckets_days_in_korean_time():
@@ -229,9 +229,9 @@ def test_render_buckets_days_in_korean_time():
                     detected_at=datetime(2027, 1, 1, 15, 20, tzinfo=UTC), importance=4),
     ]
     html = dashboard.render(events, [], [], {}, generated_at=now)
-    assert 'data-day="2027-01-01" data-counts="1,0,0,0" data-total="1"' in html
-    assert 'data-day="2026-12-31" data-counts="0,0,0,1" data-total="1"' in html
-    assert 'data-day="2027-01-02" data-counts="0,0,0,1" data-total="1"' in html
+    assert 'data-day="2027-01-01" data-counts="1,0,0,0,0" data-total="1"' in html
+    assert 'data-day="2026-12-31" data-counts="0,0,0,1,0" data-total="1"' in html
+    assert 'data-day="2027-01-02" data-counts="0,0,0,1,0" data-total="1"' in html
     days = re.findall(r'data-day="([\d-]+)"', html)
     assert len(days) == 30 and days[0] == "2026-12-04" and days[-1] == "2027-01-02"
     assert "2026-12-04 ~ 2027-01-02 (KST)" in html
@@ -320,7 +320,7 @@ def test_brand_marker_shapes_differ():
     html = dashboard.render([_event()], [], [], {}, generated_at=NOW)
     legend = html.split('id="trend-legend"')[1].split("</ul>")[0]
     shapes = re.findall(r'<svg class="swatch s(\d)"[^>]*>(<[a-z]+ [^>]*>)</svg>', legend)
-    assert [n for n, _ in shapes] == ["1", "2", "3", "4"]
+    assert [n for n, _ in shapes] == ["1", "2", "3", "4", "5"]
     assert len({shape for _, shape in shapes}) == 4
 
 
@@ -351,7 +351,7 @@ def test_health_sources_fresh_stale_missing():
     # 요약 타일
     assert "확인 필요" in section
     summary = re.sub(r"<[^>]+>|\s+", " ", section)
-    assert re.search(r"소스 +5 +개 중 지연 +1 +개 · 기록 없음 +2 +개", summary)
+    assert re.search(r"소스 +6 +개 중 지연 +1 +개 · 기록 없음 +3 +개", summary)
     assert '<div class="stat-value num">1,234</div>' in section  # 미분류 이벤트, 천 단위 구분
     assert "2건" in section and "아직 알림이 나가지 않음" in section
 
@@ -382,7 +382,7 @@ def test_health_all_fresh_and_zero_counts():
     health = _health(sources=sources, unclassified=0, pending_urgent=0, reports=[])
     section = _section(dashboard.render([], [], [], {}, generated_at=NOW, health=health), "h-health")
     assert "확인 필요" not in section and "지연" not in section.split("</div>", 1)[1]
-    assert "모두 36시간 안에 수집" in section and section.count("방금 전") == 4
+    assert "모두 36시간 안에 수집" in section and section.count("방금 전") == 5
     assert "모두 분류됨" in section and "밀린 긴급 알림 없음" in section
     assert "저장된 리포트 없음" in section and "아직 저장된 주간 리포트가 없습니다" in section
 

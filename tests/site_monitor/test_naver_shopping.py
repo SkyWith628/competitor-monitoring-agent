@@ -82,12 +82,16 @@ def test_requires_queries():
 def test_missing_keys(monkeypatch):
     monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
     monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("NAVER_SHOP_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_SHOP_CLIENT_SECRET", raising=False)
     c = NaverShoppingCollector(Brand.SPAO, {"naver_shopping": {"queries": ["스파오"]}})
-    with pytest.raises(RuntimeError, match="NAVER_CLIENT_ID"):
+    with pytest.raises(RuntimeError, match="NAVER_SHOP_CLIENT_ID"):
         c.collect()
 
 
 def test_request_retries_then_succeeds(monkeypatch):
+    monkeypatch.delenv("NAVER_SHOP_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_SHOP_CLIENT_SECRET", raising=False)
     monkeypatch.setenv("NAVER_CLIENT_ID", "test-id")
     monkeypatch.setenv("NAVER_CLIENT_SECRET", "test-secret")
     monkeypatch.setattr(ns.time, "sleep", lambda s: None)

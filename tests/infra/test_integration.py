@@ -103,11 +103,11 @@ def test_daily_then_weekly_flow(world, tmp_path, monkeypatch):
     monkeypatch.setattr("app.analysis.classify.classify", _classify)
     monkeypatch.setattr("app.analysis.report_builder.build", _build)
 
-    # 수집: 스파오는 저장됨, 나머지 세 브랜드는 0건 경고
+    # 수집: 스파오는 저장됨, 나머지 브랜드는 0건 경고
     result = runner.invoke(cli, ["collect", "--source", "site"])
     assert result.exit_code == 0, result.output
     zero_alerts = [body["text"] for url, body in posts if url.endswith("/ops")]
-    assert len(zero_alerts) == 3 and all("파싱 0건" in t for t in zero_alerts)
+    assert len(zero_alerts) == len(Brand) - 1 and all("파싱 0건" in t for t in zero_alerts)
     assert not any("spao" in t for t in zero_alerts)
     assert repo.item_counts() == {"spao": {"site_product": 1}}
 
@@ -285,9 +285,9 @@ def test_rehearsal_seed_classify_report_clear(world, monkeypatch):
                        detected_at=datetime.now(KST).replace(tzinfo=None))
     repo.save_events([real])
 
-    assert "12건 저장" in runner.invoke(cli, ["seed"]).output
-    assert "12건 저장" in runner.invoke(cli, ["seed"]).output  # 다시 넣어도 중복되지 않는다
-    assert len(repo.events_of_week(REHEARSAL_WEEK)) == 12
+    assert "14건 저장" in runner.invoke(cli, ["seed"]).output
+    assert "14건 저장" in runner.invoke(cli, ["seed"]).output  # 다시 넣어도 중복되지 않는다
+    assert len(repo.events_of_week(REHEARSAL_WEEK)) == 14
 
     assert runner.invoke(cli, ["classify"]).exit_code == 0
     urgent = [body for url, body in posts if url.endswith("/report")]
@@ -299,7 +299,7 @@ def test_rehearsal_seed_classify_report_clear(world, monkeypatch):
     assert posts and len(_SMTP.sent) == 1
     assert repo.report_channels_sent(REHEARSAL_WEEK) >= {"slack", "email"}
 
-    assert "이벤트 12건" in runner.invoke(cli, ["seed", "--clear"]).output
+    assert "이벤트 14건" in runner.invoke(cli, ["seed", "--clear"]).output
     assert repo.events_of_week(REHEARSAL_WEEK) == [] and repo.get_report(REHEARSAL_WEEK) is None
     assert repo.report_channels_sent(REHEARSAL_WEEK) == set()
     assert repo.last_report_tldr("2026-W47") is None  # 리허설 리포트가 '지난주 요약'으로 새지 않는다

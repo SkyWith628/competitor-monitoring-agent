@@ -72,3 +72,17 @@ brands:
     sns:
       instagram: ""
       youtube_channel_id: ""
+
+  whoau:
+    name: 후아유
+    site:
+      # 학습용 직접 수집. robots.txt 허용(2026-11-23 확인). 정렬·필터·검색 URL(sort=, filter=, search.html)은 넣지 않는다.
+      # 카테고리를 늘릴 땐 요청 수(하루 1회, 5초 간격)를 함께 고려할 것.
+      urls:
+        - https://www.whoau.com/product/list.html?cate_no=101
+    news:
+      keywords: ["후아유", "WHO.A.U"]
+      exclude: []
+    sns:
+      instagram: ""
+      youtube_channel_id: ""

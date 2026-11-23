@@ -77,3 +77,21 @@ def test_uniqlo_real_selectors():
 def test_collector_requires_urls():
     with pytest.raises(ValueError, match="urls"):
         SpaoCollector(Brand.SPAO, {"urls": []}).collect()
+
+
+def test_whoau_real_selectors():
+    from app.site_monitor.selectors import SELECTORS
+
+    html = (Path(__file__).parents[1] / "fixtures/html/whoau_listing.html").read_text(encoding="utf-8")
+    items = parse_products(html, brand=Brand.WHOAU, source="whoau.com",
+                           page_url="https://www.whoau.com/product/list.html?cate_no=101",
+                           selectors=SELECTORS["whoau"])
+    # 상단 추천 카드 3개(.price_box) + 일반 카드 8개(li[rel=판매가]) — 두 레이아웃 모두 잡혀야 한다
+    assert len(items) == 11 and len({i.external_id for i in items}) == 11
+    by_id = {i.external_id: i for i in items}
+    assert by_id["5345"].title == "Signature Patch Hood Zip-up (Non Brushed)" and by_id["5345"].price == 62910
+    assert by_id["5784"].title == "Long Skirt(F)" and by_id["5784"].price == 44910
+    assert by_id["5372"].price == 62910
+    assert by_id["5784"].url == "https://www.whoau.com/product/long-skirtf/5784/category/101/display/1/"
+    assert by_id["5784"].image_url.startswith("https://cafe24.poxo.com/")
+    assert all(i.price and i.sale_price is None and i.in_stock for i in items)

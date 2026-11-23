@@ -15,6 +15,7 @@ class Brand(str, Enum):
     EIGHT_SECONDS = "8seconds"
     MUSINSA_STANDARD = "musinsa_standard"
     UNIQLO = "uniqlo"
+    WHOAU = "whoau"  # 학습용 직접 수집 대상 (robots.txt 허용, 카페24)
 
 
 class SourceType(str, Enum):

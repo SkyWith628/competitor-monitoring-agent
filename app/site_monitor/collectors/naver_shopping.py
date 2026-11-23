@@ -1,7 +1,7 @@
 """네이버 쇼핑 검색 API 수집기 (공식몰 직접 수집이 막힌 브랜드용 대체 소스). 담당: A
 
 공식 API: GET https://openapi.naver.com/v1/search/shop.json
-  헤더 X-Naver-Client-Id / X-Naver-Client-Secret (.env 의 NAVER_CLIENT_ID/SECRET, B와 공용)
+  헤더 X-Naver-Client-Id / X-Naver-Client-Secret (.env 의 NAVER_SHOP_CLIENT_ID/SECRET, 없으면 NAVER_CLIENT_ID/SECRET)
   display ≤ 100, start ≤ 1000, sort = sim|date|asc|dsc
 
 config/brands.yaml 예시 (site 아래):
@@ -61,9 +61,14 @@ class NaverShoppingCollector(BaseCollector):
 
     # --- 네트워크 (테스트에서 override) ---
     def _request(self, params: dict) -> dict:
-        cid, secret = env("NAVER_CLIENT_ID"), env("NAVER_CLIENT_SECRET")
+        # 쇼핑 전용 키(NAVER_SHOP_*) 우선, 없으면 공용 키. B 구역의 NCP 키와 섞이지 않게 분리.
+        cid = env("NAVER_SHOP_CLIENT_ID") or env("NAVER_CLIENT_ID")
+        secret = env("NAVER_SHOP_CLIENT_SECRET") or env("NAVER_CLIENT_SECRET")
         if not cid or not secret:
-            raise RuntimeError(".env 에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 가 없음 (B 담당 발급)")
+            raise RuntimeError(
+                ".env 에 NAVER_SHOP_CLIENT_ID / NAVER_SHOP_CLIENT_SECRET 가 없음 "
+                "(developers.naver.com 에서 발급한 검색 API 키)"
+            )
         headers = {"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": secret}
         for attempt in range(1, self.max_retries + 1):
             self.throttle()

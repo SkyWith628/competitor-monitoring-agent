@@ -27,4 +27,15 @@ SELECTORS: dict[str, dict[str, str]] = {
                "price": "h3 + div",
                "image": ".product-tile__carousel-wrapper img",
                "id_regex": r"/products/(E\d+-\d+/\d+)"},
+    # 2026-11-23 /product/list.html?cate_no=101 에서 확인. 카페24 서버 렌더링(render 불필요).
+    # - 카드 2종: 상단 추천 3개(.price_box .price) / 일반(li[rel="판매가"] .m_item). 둘 다 "현재 판매가"만 쓴다.
+    #   소비자가(취소선)는 카드에 없을 수 있어 사용하지 않음 → 인하는 가격 변동으로 감지.
+    # - sold_out 은 카페24 표준 품절 아이콘(.icon img[alt*=품절])을 가정한 값. 품절 상품이 있는 페이지로 미확인.
+    "whoau": {**_EMPTY,
+              "product_card": 'li[id^="anchorBoxId_"]',
+              "name": ".name span",
+              "price": 'li[rel="판매가"] .m_item, .price_box .price',
+              "sold_out": '.icon img[alt*="품절"]',
+              "image": ".prdImg img",
+              "id_regex": r"/product/[^/]+/(\d+)/"},
 }
