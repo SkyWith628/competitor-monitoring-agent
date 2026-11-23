@@ -1,20 +1,29 @@
 import Link from "next/link";
 
 import { TrendChart, type TrendDay } from "@/components/TrendChart";
-import { listReports, llmUsage, recentEvents, sourceStatus } from "@/lib/data";
+import {
+  dailyEvents,
+  hasSampleEvents,
+  importantEvents,
+  listReports,
+  llmUsage,
+  sourceStatus,
+  unclassifiedCount,
+} from "@/lib/data";
 import {
   BRANDS,
   CHANGE_LABEL,
   SOURCE_TYPE_LABEL,
   agoText,
   brandLabel,
-  dayOf,
   formatTime,
   hoursBetween,
   lastDays,
   nowKst,
   num,
   safeUrl,
+  sendState,
+  sendStateView,
 } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +33,12 @@ const STALE_HOURS = 36; // 하루 한 번 수집하므로 이보다 오래 소�
 
 export default async function DashboardPage() {
   const now = nowKst();
-  const [events, sources, usage, reports] = await Promise.all([
-    recentEvents(30),
+  // 건수는 DB 가 센 값을 받는다 (이벤트를 통째로 가져오면 API 의 행 수 상한에서 잘린다 → lib/data.ts)
+  const [daily, important, unclassified, sampleEvents, sources, usage, reports] = await Promise.all([
+    dailyEvents(30),
+    importantEvents(30, 20),
+    unclassifiedCount(),
+    hasSampleEvents(SAMPLE_URL),
     sourceStatus(),
     llmUsage(),
     listReports(1),
@@ -33,17 +46,19 @@ export default async function DashboardPage() {
 
   const days = lastDays(30, now);
   const byDay = new Map<string, Record<string, number>>(days.map((d) => [d, {}]));
-  for (const e of events) {
-    const counts = byDay.get(dayOf(e.detected_at));
-    if (counts) counts[e.brand] = (counts[e.brand] ?? 0) + 1;
+  let total = 0;
+  for (const row of daily) {
+    const counts = byDay.get(row.day);
+    if (!counts) continue; // 미래 날짜 등 범위 밖
+    counts[row.brand] = (counts[row.brand] ?? 0) + row.events;
+    total += row.events;
   }
   const trend: TrendDay[] = days.map((day) => ({ day, counts: byDay.get(day)! }));
 
-  const unclassified = events.filter((e) => e.category === null).length;
   const stale = sources.filter((s) => !s.last_collected_at || hoursBetween(s.last_collected_at, now) > STALE_HOURS);
-  const important = events.filter((e) => (e.importance ?? 0) >= 4 && e.category !== "무관").slice(0, 20);
   const latest = reports[0];
-  const hasSamples = events.some((e) => e.url.startsWith(SAMPLE_URL)) || sources.some((s) => s.source.startsWith("sample-"));
+  const latestState = latest ? sendStateView(sendState(latest.sent_at, latest.channels)) : null;
+  const hasSamples = sampleEvents || sources.some((s) => s.source.startsWith("sample-"));
 
   return (
     <>
@@ -69,7 +84,7 @@ export default async function DashboardPage() {
         </div>
         <div className="tile">
           <span className="label">최근 30일 변화</span>
-          <span className="value">{num(events.length)}</span>
+          <span className="value">{num(total)}</span>
           <span className="state">건</span>
         </div>
         <div className="tile">
@@ -80,8 +95,8 @@ export default async function DashboardPage() {
         <div className="tile">
           <span className="label">최근 리포트</span>
           <span className="value">{latest ? <Link href={`/reports/${latest.week}`}>{latest.week}</Link> : "-"}</span>
-          <span className={latest ? (latest.sent_at ? "state good" : "state bad") : "state"}>
-            {latest ? (latest.sent_at ? "● 발송됨" : "▲ 미발송") : "아직 없음"}
+          <span className={latestState ? latestState.className : "state"}>
+            {latestState ? latestState.text : "아직 없음"}
           </span>
         </div>
       </section>
@@ -89,7 +104,7 @@ export default async function DashboardPage() {
       <section className="card">
         <h2>일별 변화 추이</h2>
         <p className="muted">최근 30일, 감지된 변화 건수 (브랜드별)</p>
-        {events.length ? <TrendChart days={trend} /> : <p className="empty">최근 30일 동안 감지된 변화가 없습니다.</p>}
+        {total ? <TrendChart days={trend} /> : <p className="empty">최근 30일 동안 감지된 변화가 없습니다.</p>}
       </section>
 
       <section className="card">

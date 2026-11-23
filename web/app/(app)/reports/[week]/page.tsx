@@ -2,11 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getReport, reportChannels } from "@/lib/data";
-import { CHANGE_LABEL, brandLabel, formatTime, safeUrl } from "@/lib/format";
+import { CHANGE_LABEL, CHANNEL_LABEL, brandLabel, formatTime, safeUrl, sendState } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-
-const CHANNEL_LABEL: Record<string, string> = { slack: "슬랙", email: "메일" };
 
 export default async function ReportPage({ params }: { params: Promise<{ week: string }> }) {
   const { week } = await params;
@@ -14,6 +12,14 @@ export default async function ReportPage({ params }: { params: Promise<{ week: s
   const [found, channels] = await Promise.all([getReport(week), reportChannels(week)]);
   if (!found) notFound();
   const { report, sent_at } = found;
+  const send = sendState(sent_at, channels);
+  const label = (list: string[]) => list.map((c) => CHANNEL_LABEL[c] ?? c).join(", ");
+  const sendLine =
+    send.state === "unsent"
+      ? "아직 발송되지 않은 초안입니다"
+      : send.state === "sent"
+        ? `발송 ${formatTime(sent_at)} · ${label(channels)}`
+        : `일부만 발송됨${sent_at ? ` (${formatTime(sent_at)})` : ""}${channels.length ? ` · 발송: ${label(channels)}` : ""} · 미발송: ${label(send.missing)}`;
 
   return (
     <article className="report">
@@ -23,9 +29,7 @@ export default async function ReportPage({ params }: { params: Promise<{ week: s
         </p>
         <h1>경쟁사 주간 리포트 {report.week}</h1>
         <p className="muted">
-          {sent_at
-            ? `발송 ${formatTime(sent_at)}${channels.length ? ` · ${channels.map((c) => CHANNEL_LABEL[c] ?? c).join(", ")}` : ""}`
-            : "아직 발송되지 않은 초안입니다"}
+          {sendLine}
         </p>
       </div>
 
