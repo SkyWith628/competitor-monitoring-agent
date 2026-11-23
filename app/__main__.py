@@ -39,10 +39,10 @@ SOURCE_TYPES = {
 
 @cli.command("init-db")
 def init_db() -> None:
-    from app.infra.storage.db import init_db as _init
+    from app.infra.storage import db
 
-    _init()
-    typer.echo("DB 초기화 완료")
+    db.init_db()
+    typer.echo(f"DB 초기화 완료 ({db.describe()})")
 
 
 @cli.command()

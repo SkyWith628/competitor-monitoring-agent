@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy import update
 from typer.testing import CliRunner
 
 from app.__main__ import cli
@@ -15,11 +16,9 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def ops(tmp_path, monkeypatch):
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
+def ops(database, monkeypatch):
     alerts: list[str] = []
     monkeypatch.setattr(slack, "send_ops_alert", alerts.append)
-    db.init_db()
     return alerts
 
 
@@ -101,7 +100,7 @@ def test_news_alert_only_when_stale(ops, monkeypatch):
     runner.invoke(cli, ["collect", "--source", "news", "--brand", "spao"])  # 신규 0건이지만 어제 수집됨
     assert ops == []
     with db.connect() as conn:
-        conn.execute("UPDATE raw_items SET collected_at=?", (old.isoformat(),))
+        conn.execute(update(db.raw_items).values(collected_at=old.isoformat()))
     runner.invoke(cli, ["collect", "--source", "news", "--brand", "spao"])
     assert len(ops) == 1 and "신규 기사 없음" in ops[0]
 
@@ -126,3 +125,16 @@ def test_llm_usage_sums_by_model(ops):
         "model-a": {"calls": 2, "input_tokens": 150, "output_tokens": 30},
         "model-b": {"calls": 1, "input_tokens": 7, "output_tokens": 3},
     }
+
+
+# ---------- DB 접속 설정 ----------
+def test_database_url_accepts_plain_postgres_scheme(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:p%40ss@db.example.com:5432/postgres")
+    url = db.database_url()
+    assert url.drivername == "postgresql+psycopg" and url.password == "p@ss"
+    assert db.describe() == "postgresql: db.example.com"
+
+
+def test_database_url_defaults_to_sqlite_file(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")  # GitHub Actions 는 없는 secret 을 빈 문자열로 준다
+    assert db.database_url().get_backend_name() == "sqlite"

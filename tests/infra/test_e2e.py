@@ -11,7 +11,7 @@ from app.analysis import summarize as summarize_mod
 from app.core import config
 from app.core.models import Brand, BrandSummary, ChangeEvent, ChangeType
 from app.infra.notify import email, slack
-from app.infra.storage import db, repo
+from app.infra.storage import repo
 
 WEEK = "2026-W47"
 runner = CliRunner()
@@ -29,9 +29,8 @@ def _fake_llm(model, system, user, schema, **kwargs):
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch):
+def env(database, tmp_path, monkeypatch):
     """임시 DB·출력 폴더, 가짜 LLM, 발송 내역을 기록하는 가짜 슬랙·메일."""
-    monkeypatch.setattr(db, "DB_PATH", tmp_path / "monitor.db")
     monkeypatch.setattr(config, "ROOT", tmp_path)
     for mod in (classify_mod, summarize_mod, insight_mod):
         monkeypatch.setattr(mod, "ask_json", _fake_llm)
@@ -50,9 +49,7 @@ def _seed():
 
 
 def _sent_at():
-    with db.connect() as conn:
-        row = conn.execute("SELECT sent_at FROM reports WHERE week=?", (WEEK,)).fetchone()
-    return row and row["sent_at"]
+    return repo.report_sent_at(WEEK)
 
 
 def test_dry_run_writes_html_without_sending(env, tmp_path):
