@@ -37,7 +37,6 @@ class GoogleNewsCollector(BaseCollector):
         if feed.bozo or not feed.get("version"):
             raise RuntimeError(f"구글 뉴스 응답이 RSS가 아닙니다 (차단·동의 페이지 가능성): "
                                f"{feed.get('bozo_exception') or text[:80]!r}")
-        keywords = [k.lower() for k in self.config["keywords"]]
         exclude = self.config.get("exclude") or []
 
         items: list[RawItem] = []
@@ -48,11 +47,9 @@ class GoogleNewsCollector(BaseCollector):
                 continue
             title = _strip_press(e.title, source.get("title"))
 
-            # 제목에 브랜드명이 없는 기사(본문에서 스치듯 언급)는 버리기 — 4개 브랜드 모두 같은 기준
-            if not any(k in title.lower() for k in keywords):
-                continue
-
             # ④ 제외어가 들어간 기사는 버리기
+            #    (제목에 브랜드명이 없는 기사도 버리지 않는다. 무관 기사 판단은 설계대로
+            #     제외어 + C의 LLM 분류(relevance)에 맡긴다 — 수집 단계에서 버리면 되살릴 수 없음)
             if any(word in title for word in exclude):
                 continue
 

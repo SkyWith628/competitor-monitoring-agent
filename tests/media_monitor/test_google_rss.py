@@ -24,7 +24,7 @@ def _collector(exclude=None):
 
 def test_parses_items_and_strips_press_name():
     items = _collector().collect()
-    assert len(items) == 2  # 블로그 글·제목에 브랜드 없는 기사는 빠지고 2건만
+    assert len(items) == 3  # 블로그 글만 빠지고 3건
     assert items[0].title == "스파오, 겨울 신상 출시"
     assert items[0].source_type == SourceType.NEWS
     assert items[0].published_at is not None
@@ -32,7 +32,7 @@ def test_parses_items_and_strips_press_name():
 
 def test_exclude_keyword_filters_out():
     items = _collector(exclude=["화재"]).collect()
-    assert [i.title for i in items] == ["스파오, 겨울 신상 출시"]
+    assert [i.title for i in items] == ["스파오, 겨울 신상 출시", "파자마가 뜬다"]
 
 
 def test_non_news_sites_are_skipped():
@@ -40,15 +40,10 @@ def test_non_news_sites_are_skipped():
     assert not any("블로그" in t for t in titles)
 
 
-def test_title_without_brand_is_skipped():
+def test_title_without_brand_is_kept():
+    """제목에 브랜드명이 없어도(본문 언급) 버리지 않는다 — 무관 판단은 C의 LLM 분류 몫."""
     titles = [i.title for i in _collector().collect()]
-    assert "파자마가 뜬다" not in titles
-
-
-def test_keyword_match_ignores_case():
-    c = GoogleNewsCollector(Brand.SPAO, {"keywords": ["SPAO"], "exclude": []})
-    c._fetch = lambda query: SAMPLE.replace("스파오, 겨울", "spao, 겨울")
-    assert [i.title for i in c.collect()] == ["spao, 겨울 신상 출시"]
+    assert "파자마가 뜬다" in titles
 
 
 def test_html_instead_of_rss_raises():
