@@ -1,15 +1,18 @@
 """① 이벤트 분류·중요도 태깅 (매일 실행, 저비용 모델). 담당: C"""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from app.analysis.features import event_line
 from app.analysis.llm_client import CLASSIFY_MODEL, ask_json
 from app.core.models import Category, ChangeEvent
 
 PROMPT = (Path(__file__).parent / "prompts" / "classify.md").read_text(encoding="utf-8")
 BATCH_SIZE = 30
+log = logging.getLogger(__name__)
 
 
 class _Label(BaseModel):
@@ -23,16 +26,29 @@ class _Labels(BaseModel):
     labels: list[_Label]
 
 
+def _apply(batch: list[ChangeEvent]) -> list[ChangeEvent]:
+    """한 배치를 분류해 결과를 채우고, 라벨을 못 받은 이벤트를 돌려준다."""
+    by_id = {e.id: e for e in batch}
+    payload = "\n".join(event_line(e) for e in batch)
+    result = ask_json(CLASSIFY_MODEL, PROMPT, payload, _Labels, max_tokens=4096, effort="low")
+    for lab in result.labels:
+        if (ev := by_id.pop(lab.id, None)) is None:
+            continue  # 입력에 없던 id 이거나 같은 id 중복 — 무시
+        importance = 1 if lab.category == Category.IRRELEVANT else lab.importance  # 무관은 항상 1
+        ev.category, ev.importance, ev.llm_note = lab.category, importance, lab.note
+    return list(by_id.values())
+
+
 def classify(events: list[ChangeEvent]) -> list[ChangeEvent]:
-    by_id = {e.id: e for e in events}
+    """이벤트에 category·importance·llm_note 를 채워 돌려준다.
+
+    모델이 일부 id를 빠뜨리면 빠진 것만 한 번 더 묻는다. 그래도 남으면 category 가 비어 있는
+    채로 두며, repo 의 미분류 조회에 다시 잡혀 다음 실행에서 재시도된다.
+    """
     for i in range(0, len(events), BATCH_SIZE):
-        batch = events[i : i + BATCH_SIZE]
-        payload = "\n".join(
-            e.model_dump_json(include={"id", "brand", "change_type", "title", "detail"})
-            for e in batch
-        )
-        result = ask_json(CLASSIFY_MODEL, PROMPT, payload, _Labels, max_tokens=4096, effort="low")
-        for lab in result.labels:
-            if ev := by_id.get(lab.id):
-                ev.category, ev.importance, ev.llm_note = lab.category, lab.importance, lab.note
+        missing = _apply(events[i : i + BATCH_SIZE])
+        if missing:
+            missing = _apply(missing)
+        if missing:
+            log.warning("분류 라벨 누락 %d건 (다음 실행에서 재시도): %s", len(missing), [e.id for e in missing])
     return events

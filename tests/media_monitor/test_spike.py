@@ -85,3 +85,10 @@ def test_word_containing_event_is_not_giveaway():
     post = _post("new", title="How to prevent pilling", likes=110, comments=900)
     reason = detect_spikes([post], HISTORY)[0].detail["reason"]
     assert "이벤트" not in reason
+
+
+def test_hidden_likes_do_not_hint_ads():
+    # 좋아요를 숨긴 영상(값 없음)은 '좋아요 평소 수준'이 아니라 '모름' → 광고 추정을 붙이지 않는다
+    history = [_post(f"v{n}", views=10_000, likes=100) for n in range(5)]
+    reason = detect_spikes([_post("hidden", views=500_000)], history)[0].detail["reason"]
+    assert "광고" not in reason

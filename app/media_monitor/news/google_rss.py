@@ -40,7 +40,8 @@ class GoogleNewsCollector(BaseCollector):
         feed = feedparser.parse(text)
         # 구글이 RSS 대신 HTML(동의·차단 안내)을 200으로 주면 feedparser 는 오류 없이 0건이 된다.
         # 뉴스는 '새 기사 0건'이 정상인 날도 있어서 그대로 두면 며칠째 깨져도 모르므로, 예외로 알린다.
-        if feed.bozo or not feed.get("version"):
+        # bozo 만으로는 판단하지 않는다: 정의 안 된 엔티티 하나 같은 사소한 문제에도 켜지는데 기사는 정상 파싱된다
+        if not feed.get("version") or (feed.bozo and not feed.entries):
             raise RuntimeError(f"구글 뉴스 응답이 RSS가 아닙니다 (차단·동의 페이지 가능성): "
                                f"{feed.get('bozo_exception') or text[:80]!r}")
         if len(feed.entries) >= RSS_LIMIT:

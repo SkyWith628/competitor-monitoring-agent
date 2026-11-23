@@ -68,6 +68,7 @@ def _reason(item: RawItem, spikes: dict, others: list[RawItem]) -> str:
         return f"{summary} · 추정: 댓글 참여 이벤트 게시물이라 댓글이 몰림"
     if "views" in spikes:
         likes = [h.metrics["likes"] for h in others if "likes" in h.metrics]
-        if likes and item.metrics.get("likes", 0) < median(likes) * 1.5:
+        # 좋아요를 숨긴 게시물(값 없음)은 0이 아니라 '모름'이므로 추정하지 않는다
+        if likes and "likes" in item.metrics and item.metrics["likes"] < median(likes) * 1.5:
             return f"{summary} · 추정: 조회수만 늘고 좋아요는 평소 수준 → 광고(유료 노출) 가능성"
     return summary

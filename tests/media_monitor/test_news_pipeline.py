@@ -55,3 +55,27 @@ def test_title_with_brand_becomes_representative(monkeypatch):
     monkeypatch.setattr(pipeline.repo, "save_events", lambda events: None)
 
     assert [e.title for e in pipeline.run_news(Brand.MUSINSA_STANDARD)] == ["농심, 무신사 스탠다드와 새우깡 티셔츠"]
+
+
+def test_duplicate_article_is_saved_so_it_does_not_resurface(monkeypatch):
+    # 중복으로 걸러진 기사도 저장해야, 대표 기사가 7일 창에서 빠진 날 '새 기사'로 다시 올라오지 않는다
+    feed, db = [SAVED, FOLLOW_UP], set()
+
+    class Collector:
+        def __init__(self, brand, cfg):
+            pass
+
+        def collect(self):
+            return list(feed)
+
+    monkeypatch.setattr(pipeline, "brands_config",
+                        lambda: {"musinsa_standard": {"news": {"keywords": ["무신사 스탠다드"]}}})
+    monkeypatch.setattr(pipeline, "NaverNewsCollector", Collector)
+    monkeypatch.setattr(pipeline, "GoogleNewsCollector", lambda brand, cfg: type("E", (), {"collect": lambda s: []})())
+    monkeypatch.setattr(pipeline.repo, "exists", lambda item: item.url in db)
+    monkeypatch.setattr(pipeline.repo, "save_items", lambda items: db.update(i.url for i in items))
+    monkeypatch.setattr(pipeline.repo, "save_events", lambda events: None)
+
+    assert [e.title for e in pipeline.run_news(Brand.MUSINSA_STANDARD)] == [SAVED.title]  # 첫날: 이벤트 1건
+    feed[:] = [FOLLOW_UP]  # 며칠 뒤: 대표 기사는 창에서 빠지고 후속 기사만 남음
+    assert pipeline.run_news(Brand.MUSINSA_STANDARD) == []
