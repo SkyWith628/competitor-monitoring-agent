@@ -9,7 +9,7 @@
 | `sns/instagram.py` | Instagram Graph API `business_discovery`로 공식계정 게시물·좋아요·댓글 |
 | `sns/youtube.py` | YouTube Data API v3 공식 채널 신규 영상·조회수 |
 | `dedup.py` | URL 정규화 + 제목 유사도로 중복 기사 병합 |
-| `spike.py` | 계정 평균 대비 반응 2배↑ → `SNS_SPIKE` |
+| `spike.py` | 조회수·좋아요·댓글을 따로, 계정 최근 게시물 최고 기록 경신 시 → `SNS_SPIKE` (평소→지금·추정 이유 포함) |
 | `pipeline.py` | `run(brand)` : 수집 → 중복제거 → 저장 → 이벤트화 |
 
 - 입력: `config/brands.yaml`의 `news`, `sns` 항목 (키워드·제외어·계정 — **B가 관리**)
