@@ -17,6 +17,7 @@ import httpx
 from app.core.base_collector import BaseCollector
 from app.core.config import env
 from app.core.models import RawItem, SourceType
+from app.media_monitor.news.rules import has_excluded, mentions_brand
 
 API_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
 DISPLAY = 100  # 한 번에 받을 기사 수 (API 최대값)
@@ -49,8 +50,8 @@ class NaverNewsCollector(BaseCollector):
 
                 title = _clean(a["title"])
                 body = _clean(a.get("description", ""))
-                # ③ 제외어가 제목이나 요약에 있으면 버리기
-                if any(word in title or word in body for word in exclude):
+                # ③ 공통 기준(rules.py): 제목·요약 어디에도 브랜드명이 없거나 제외어가 있으면 버리기
+                if not mentions_brand(self.config["keywords"], title, body) or has_excluded(exclude, title, body):
                     continue
 
                 # ④ 팀 약속 양식(RawItem)에 옮겨 적기

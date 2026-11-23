@@ -48,6 +48,18 @@ def test_cleans_html_and_skips_same_url():
     assert items[0].published_at is not None
 
 
+def test_brand_nowhere_is_skipped():
+    """제목·요약 어디에도 브랜드가 없는 기사(본문 깊숙이 스친 기사·스팸)는 버림 — 구글과 같은 기준."""
+    c = _collector()
+    c._fetch = lambda keyword: [{"title": "8 Myths About Watches", "originallink": "https://x.com/1",
+                                 "link": "https://x.com/1", "description": "Watches are ...",
+                                 "pubDate": _ago(1)},
+                                {"title": "블프에 크리스마스까지", "originallink": "https://y.com/2",
+                                 "link": "https://y.com/2", "description": "<b>스파오</b>는 29일까지 블프",
+                                 "pubDate": _ago(1)}]
+    assert [i.title for i in c.collect()] == ["블프에 크리스마스까지"]  # 요약에 브랜드 있으면 통과
+
+
 def test_older_than_7_days_is_skipped():
     titles = [i.title for i in _collector().collect()]
     assert "스파오 여름 세일" not in titles
