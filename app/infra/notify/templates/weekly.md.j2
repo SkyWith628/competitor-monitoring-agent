@@ -1,0 +1,30 @@
+# 📊 경쟁사 주간 리포트 {{ r.week }}
+
+> **TL;DR** {{ r.tldr }}
+
+## 🔥 Top 5 변화
+{% for e in r.top_events %}
+{{ loop.index }}. [{{ brand_label[e.brand.value] }}] [{{ e.title }}]({{ e.url }}){% if e.llm_note %} — {{ e.llm_note }}{% endif %}
+
+{% endfor %}
+
+## 브랜드별 요약
+{% for s in r.brand_summaries %}
+
+### {{ brand_label[s.brand.value] }}
+{% for h in s.highlights %}
+- {{ h }}
+{% else %}
+- (이번 주 주요 변화 없음)
+{% endfor %}
+{% endfor %}
+
+## 💡 인사이트
+{% for i in r.insights %}
+- {{ i }}
+{% endfor %}
+
+## ✅ 액션 제안
+{% for a in r.actions %}
+- {{ a }}
+{% endfor %}

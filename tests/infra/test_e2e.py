@@ -64,6 +64,8 @@ def test_dry_run_writes_html_without_sending(env, tmp_path):
     assert result.exit_code == 0, result.output
     html = (tmp_path / "data" / f"report-{WEEK}.html").read_text(encoding="utf-8")
     assert "스파오 가격 공세" in html and "히트텍 인하" in html
+    md = (tmp_path / "data" / f"report-{WEEK}.md").read_text(encoding="utf-8")
+    assert "1. [스파오] [히트텍 인하](https://example.com/p/1) — 25% 인하" in md
     assert "근거 없는 문장" not in html  # 인용 없는 하이라이트는 걸러진다
     assert env == {"slack": [], "email": [], "ops": []}
     assert _sent_at() is None
@@ -111,7 +113,8 @@ def test_collect_exits_nonzero_but_continues_on_brand_failure(env, monkeypatch):
     monkeypatch.setattr(pipeline, "run_news", run_news)
     result = runner.invoke(cli, ["collect", "--source", "news"])
     assert result.exit_code == 1
-    assert "[news/uniqlo] 이벤트 0건" in result.output and len(env["ops"]) == 1
+    assert "[news/uniqlo] 이벤트 0건" in result.output 
+    assert [m for m in env["ops"] if "수집 실패" in m] == ["수집 실패 news/spao: RuntimeError('timeout')"]
 
 
 def test_default_week_is_last_week_in_kst(env, monkeypatch):

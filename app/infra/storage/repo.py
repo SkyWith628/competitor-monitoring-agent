@@ -57,6 +57,35 @@ def recent_posts(brand: Brand, source: str, limit: int = 30) -> list[RawItem]:
     return [RawItem.model_validate_json(r["data"]) for r in rows]
 
 
+def snapshot_counts(brand: Brand, source_types: list[SourceType]) -> dict[str, int]:
+    """소스별 누적 저장 건수. 수집 전후 차이로 '이번 실행에서 몇 건 저장됐는지'를 잰다."""
+    marks = ",".join("?" * len(source_types))
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT source, COUNT(*) AS n FROM snapshots WHERE brand=? AND source IN "
+            f"(SELECT DISTINCT source FROM raw_items WHERE brand=? AND source_type IN ({marks})) "
+            "GROUP BY source",
+            (brand.value, brand.value, *(t.value for t in source_types)),
+        ).fetchall()
+    return {r["source"]: r["n"] for r in rows}
+
+
+def latest_collected_at(brand: Brand, source_type: SourceType) -> datetime | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(collected_at) AS ts FROM raw_items WHERE brand=? AND source_type=?",
+            (brand.value, source_type.value),
+        ).fetchone()
+    return datetime.fromisoformat(row["ts"]) if row["ts"] else None
+
+
+def purge_snapshots(keep_weeks: int = 8) -> int:
+    """보관 기간이 지난 일자별 스냅샷 삭제 (raw_items 의 최신 상태는 남는다). 삭제 건수 반환."""
+    cutoff = (datetime.now(KST).date() - timedelta(weeks=keep_weeks)).isoformat()
+    with connect() as conn:
+        return conn.execute("DELETE FROM snapshots WHERE collected_at < ?", (cutoff,)).rowcount
+
+
 # ---------- ChangeEvent (A·B 저장, C 조회·갱신) ----------
 def save_events(events: list[ChangeEvent]) -> None:
     with connect() as conn:
@@ -109,3 +138,24 @@ def last_report_tldr(week: str) -> str | None:
             "SELECT tldr FROM reports WHERE week < ? ORDER BY week DESC LIMIT 1", (week,)
         ).fetchone()
     return row["tldr"] if row else None
+
+
+# ---------- LLM 사용량 (C 기록) ----------
+def save_llm_call(model: str, input_tokens: int, output_tokens: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO llm_calls (model, input_tokens, output_tokens, called_at) VALUES (?,?,?,?)",
+            (model, input_tokens, output_tokens, datetime.now(KST).isoformat()),
+        )
+
+
+def llm_usage(week: str) -> dict[str, dict[str, int]]:
+    """주차별 모델별 사용량: {"claude-...": {"calls": 3, "input_tokens": 1200, "output_tokens": 400}}"""
+    start, end = _week_range(week)
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens, "
+            "SUM(output_tokens) AS output_tokens FROM llm_calls "
+            "WHERE called_at >= ? AND called_at < ? GROUP BY model", (start, end),
+        ).fetchall()
+    return {r["model"]: {k: r[k] for k in ("calls", "input_tokens", "output_tokens")} for r in rows}

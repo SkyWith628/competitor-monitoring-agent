@@ -1,4 +1,4 @@
-"""WeeklyReport → HTML(메일) / 슬랙 Block Kit. 담당: D"""
+"""WeeklyReport → HTML(메일) / Markdown / 슬랙 Block Kit. 담당: D"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +10,7 @@ from app.core.models import WeeklyReport
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
     autoescape=select_autoescape(["html"]),
+    trim_blocks=True,
 )
 
 BRAND_LABEL = {"spao": "스파오", "8seconds": "에잇세컨즈", "musinsa_standard": "무신사 스탠다드", "uniqlo": "유니클로"}
@@ -17,6 +18,10 @@ BRAND_LABEL = {"spao": "스파오", "8seconds": "에잇세컨즈", "musinsa_stan
 
 def to_html(report: WeeklyReport) -> str:
     return _env.get_template("weekly.html.j2").render(r=report, brand_label=BRAND_LABEL)
+
+
+def to_markdown(report: WeeklyReport) -> str:
+    return _env.get_template("weekly.md.j2").render(r=report, brand_label=BRAND_LABEL)
 
 
 def to_slack_blocks(report: WeeklyReport, full_report_url: str | None = None) -> list[dict]:

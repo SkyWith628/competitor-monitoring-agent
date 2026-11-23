@@ -13,6 +13,8 @@
 | `../__main__.py` | CLI 진입점 (`python -m app ...`) |
 | `../../.github/workflows/` | daily / weekly / ci 자동 실행 |
 
+- LLM 토큰 로깅은 `repo.save_llm_call(model, input_tokens, output_tokens)` (C가 `llm_client.log_usage` 에서 호출)
+- 수집기가 예외 없이 0건만 돌려줘도 `collect` 가 `#monitor-ops` 로 경고 (뉴스는 3일 연속 신규 0건일 때)
 - repo 함수 시그니처를 바꿀 때는 호출하는 쪽(A·B·C)에 먼저 공유
 - 비밀값은 `.env`(로컬)·GitHub Secrets(운영)에만 둔다
 - 운영 경고(수집 0건, 예외, LLM 실패)는 `#monitor-ops` 채널로

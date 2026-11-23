@@ -27,3 +27,5 @@ jobs:
         if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
       - run: python -m app classify
         if: ${{ !cancelled() }}   # 앞 단계가 실패해도 계속
+      - run: python -m app cleanup
+        if: ${{ !cancelled() }}

@@ -48,3 +48,4 @@ pytest -q
 | `python -m app collect --source news` / `--source sns` | B |
 | `python -m app classify` | C |
 | `python -m app report --week 2026-W47 --dry-run` | C + D |
+| `python -m app cleanup` | D |
