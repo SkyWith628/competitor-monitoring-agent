@@ -49,3 +49,36 @@ def test_very_short_core_is_not_over_merged():
     # 브랜드명을 빼면 "매장"만 남는 제목이 다른 매장 기사를 삼키면 안 됨
     items = [_musinsa(0, "무신사 스탠다드 매장"), _musinsa(1, "무신사 스탠다드, 강남 신규 매장 오픈")]
     assert len(dedup(items, ignore=MUSINSA)) == 2
+
+
+# ── 리뷰(#6)에서 나온 경계 사례 ─────────────────────────────────────────
+def _titles(brand: Brand, titles: list[str]) -> list[RawItem]:
+    return [RawItem(brand=brand, source_type=SourceType.NEWS, source="google_news", external_id=str(i),
+                    url=f"https://news{i}.example.com/a", title=t) for i, t in enumerate(titles)]
+
+
+def test_same_frame_different_place_is_kept():
+    items = _titles(Brand.MUSINSA_STANDARD, ["무신사 스탠다드, 제주 첫 매장 오픈", "무신사 스탠다드, 부산 첫 매장 오픈"])
+    assert len(dedup(items, ignore=MUSINSA)) == 2
+
+
+def test_different_numbers_are_kept():
+    items = _titles(Brand.SPAO, ["스파오, 3분기 매출 12% 증가", "스파오, 4분기 매출 12% 감소"])
+    assert len(dedup(items, ignore=["스파오", "SPAO"])) == 2
+
+
+UNIQLO_TITLES = ["유니클로 신상 출시",
+                 "유니클로, 히트텍 겨울 신상 출시…라인업 확대",
+                 "유니클로 키즈 신상 출시 기념 팝업 연다"]
+
+
+def test_short_title_does_not_swallow_other_stories():
+    # 브랜드명을 빼면 "신상 출시"만 남는 제목이 그 말이 들어간 다른 기사들을 삼키면 안 됨
+    items = _titles(Brand.UNIQLO, UNIQLO_TITLES)
+    assert len(dedup(items, ignore=["유니클로", "UNIQLO"])) == 3
+
+
+def test_result_does_not_depend_on_order():
+    forward = dedup(_titles(Brand.UNIQLO, UNIQLO_TITLES), ignore=["유니클로"])
+    backward = dedup(_titles(Brand.UNIQLO, UNIQLO_TITLES[::-1]), ignore=["유니클로"])
+    assert len(forward) == len(backward)
