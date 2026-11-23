@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import html
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
 import httpx
@@ -20,6 +20,7 @@ from app.core.models import RawItem, SourceType
 
 API_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
 DISPLAY = 100  # 한 번에 받을 기사 수 (API 최대값)
+RECENT_DAYS = 7  # 구글 뉴스(when:7d)와 기준을 맞춰 최근 7일 기사만
 
 
 class NaverNewsCollector(BaseCollector):
@@ -30,6 +31,8 @@ class NaverNewsCollector(BaseCollector):
         exclude = self.config.get("exclude") or []
         items: list[RawItem] = []
         seen: set[str] = set()
+        # 네이버는 '최신 100건'을 줘서 기사가 적은 브랜드는 몇 달 전 기사까지 온다 → 7일로 자름
+        since = datetime.now() - timedelta(days=RECENT_DAYS)
 
         # ① 키워드마다 한 번씩 검색 ("스파오" 검색, "SPAO" 검색)
         for keyword in self.config["keywords"]:
@@ -39,6 +42,10 @@ class NaverNewsCollector(BaseCollector):
                 if url in seen:
                     continue
                 seen.add(url)
+
+                published = _to_datetime(a.get("pubDate"))
+                if published and published < since:  # 7일보다 오래된 기사는 버리기
+                    continue
 
                 title = _clean(a["title"])
                 body = _clean(a.get("description", ""))
@@ -55,7 +62,7 @@ class NaverNewsCollector(BaseCollector):
                     url=url,
                     title=title,
                     body=body or None,
-                    published_at=_to_datetime(a.get("pubDate")),
+                    published_at=published,
                 ))
         return items
 
