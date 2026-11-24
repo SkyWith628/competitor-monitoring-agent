@@ -471,10 +471,9 @@ def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 �
 
     typer.echo("[수집 API]")
     need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 뉴스", "네이버 뉴스 수집이 실패합니다", "경고")
-    if (env("NAVER_SHOP_CLIENT_ID") or "").strip() or (env("NAVER_SHOP_CLIENT_SECRET") or "").strip():
-        need(["NAVER_SHOP_CLIENT_ID", "NAVER_SHOP_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다", "경고")
-    else:
-        need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다 (뉴스 키를 같이 씀)", "경고")
+    # 뉴스용 NAVER API HUB 키로는 쇼핑 검색을 쓸 수 없다 (API HUB 에 쇼핑 검색이 없음) → 전용 키가 있어야 한다
+    need(["NAVER_SHOP_CLIENT_ID", "NAVER_SHOP_CLIENT_SECRET"], "네이버 쇼핑",
+         "상품·가격 수집이 실패합니다 (개발자센터 키 필요, 뉴스용 API HUB 키로는 안 됨)", "경고")
     need(["YOUTUBE_API_KEY"], "유튜브", "유튜브 수집이 실패합니다", "경고")
     need(["IG_ACCESS_TOKEN", "IG_BUSINESS_ACCOUNT_ID"], "인스타그램", "인스타그램 수집이 실패합니다", "경고")
 
