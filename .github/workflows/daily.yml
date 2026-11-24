@@ -31,9 +31,11 @@ jobs:
       - id: install
         run: pip install -e . -c constraints.txt
       # 수집 단계는 앞 단계가 실패해도(일부 브랜드 실패 → exit 1) 각각 실행한다. 설치가 실패했으면 건너뛴다.
-      - name: collect site
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: python -m app collect --source site
+      # 상품·가격 수집(collect --source site)은 뺐다 (2026-11-24): 쇼핑 검색 키를 구할 수 없어 매일 401 로 실패했다.
+      # 키(NAVER_SHOP_CLIENT_ID/SECRET)를 구하면 아래 세 줄의 주석을 풀어 되살린다 → app/site_monitor/README.md
+      # - name: collect site
+      #   if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      #   run: python -m app collect --source site
       - name: collect news
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: python -m app collect --source news

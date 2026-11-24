@@ -54,7 +54,10 @@ User-Agent를 속이거나 차단을 우회하는 방식은 쓰지 않는다.
 1. 팀이나 회사에 **예전에 만든 개발자센터 애플리케이션**(검색 API 사용 설정됨)이 있으면, 그 Client ID·Secret을
    `NAVER_SHOP_CLIENT_ID`·`NAVER_SHOP_CLIENT_SECRET`에 넣는다. 개발자센터 → Application → 내 애플리케이션에서 확인.
    없다면 개발자센터에서 애플리케이션 등록을 직접 시도해 본다(사용 API에 "검색"이 보이는지).
-2. 구할 수 없으면 상품 수집은 쓸 수 없다. daily 워크플로의 `collect site` 단계를 빼서 매일 실패 표시가 뜨지 않게 한다.
+2. 구할 수 없으면 상품 수집은 쓸 수 없다.
+
+**지금 상태**: 키가 없어서 daily 워크플로에서 `collect site` 단계를 빼 두었다(2026-11-24). 코드와 테스트는 그대로 있고,
+키를 구하면 `.github/workflows/daily.yml`의 주석 처리된 세 줄을 풀어 되살린다. 손으로는 `python -m app collect --source site`로 돌릴 수 있다.
 
 ## 아직 확인하지 못한 것 (TODO(A))
 
