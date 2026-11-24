@@ -34,7 +34,7 @@ def test_price_change_and_discount():
 
 
 def test_spike_ratio_and_event_line():
-    e = _ev(1, ChangeType.SNS_SPIKE, likes=18400, avg_likes=4100)
+    e = _ev(1, ChangeType.SNS_SPIKE, spikes={"likes": {"value": 18400, "usual": 4100, "record": 6000, "ratio": 4.5}})
     row = json.loads(features.event_line(e))
     assert row["computed"] == {"spike_ratio": 4.5}
     assert "computed" not in json.loads(features.event_line(_ev(2)))

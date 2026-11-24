@@ -8,8 +8,6 @@ dependencies = [
     "python-dotenv",
     "typer",
     "httpx",
-    "selectolax",
-    "playwright",
     "feedparser",
     "rapidfuzz",
     "anthropic",

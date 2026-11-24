@@ -24,7 +24,7 @@ A·B·C가 알아둘 약속
     - 종료 코드: 0 = 정상, 1 = 일부라도 실패(Actions 에서 빨갛게 보인다), 2 = 명령 인자가 잘못됨.
 
 import 를 함수 안에서 하는 이유
-    명령 하나를 실행할 때 다른 역할의 모듈까지 전부 불러오지 않기 위해서다. 예를 들어 playwright 가
+    명령 하나를 실행할 때 다른 역할의 모듈까지 전부 불러오지 않기 위해서다. 예를 들어 수집용 패키지가
     설치되지 않은 환경에서도 `report` 는 돌아야 한다. 테스트에서 일부만 가짜로 바꾸기도 쉽다.
 """
 from __future__ import annotations
@@ -464,6 +464,10 @@ def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 �
 
     typer.echo("[수집 API]")
     need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 뉴스", "네이버 뉴스 수집이 실패합니다", "경고")
+    if (env("NAVER_SHOP_CLIENT_ID") or "").strip() or (env("NAVER_SHOP_CLIENT_SECRET") or "").strip():
+        need(["NAVER_SHOP_CLIENT_ID", "NAVER_SHOP_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다", "경고")
+    else:
+        need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다 (뉴스 키를 같이 씀)", "경고")
     need(["YOUTUBE_API_KEY"], "유튜브", "유튜브 수집이 실패합니다", "경고")
     need(["IG_ACCESS_TOKEN", "IG_BUSINESS_ACCOUNT_ID"], "인스타그램", "인스타그램 수집이 실패합니다", "경고")
 

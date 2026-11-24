@@ -1,0 +1,28 @@
+{
+  "lastBuildDate": "Tue, 24 Nov 2026 09:00:00 +0900",
+  "total": 6,
+  "start": 1,
+  "display": 6,
+  "items": [
+    {"title": "<b>스파오</b> 푸퍼 숏패딩 &amp; 후드", "link": "https://search.shopping.naver.com/catalog/1001",
+     "image": "https://shopping-phinf.pstatic.net/main_1001/1001.jpg", "lprice": "59900", "hprice": "",
+     "mallName": "스파오 공식스토어", "productId": "1001", "productType": "2", "brand": "스파오", "maker": "이랜드월드",
+     "category1": "패션의류", "category2": "남성의류", "category3": "점퍼", "category4": "패딩"},
+    {"title": "<b>SPAO</b> 케이블 니트", "link": "https://search.shopping.naver.com/catalog/1002",
+     "image": "https://shopping-phinf.pstatic.net/main_1002/1002.jpg", "lprice": "29900", "hprice": "39900",
+     "mallName": "네이버", "productId": "1002", "productType": "1", "brand": "SPAO", "maker": "",
+     "category1": "패션의류", "category2": "여성의류", "category3": "니트/스웨터", "category4": ""},
+    {"title": "<b>스파오</b> 스타일 오버핏 맨투맨", "link": "https://search.shopping.naver.com/catalog/1003",
+     "image": "", "lprice": "12900", "hprice": "", "mallName": "어느보세몰", "productId": "1003", "productType": "2",
+     "brand": "", "maker": "", "category1": "패션의류", "category2": "남성의류", "category3": "티셔츠", "category4": ""},
+    {"title": "<b>스파오</b> 중고 패딩", "link": "https://search.shopping.naver.com/catalog/1004",
+     "image": "", "lprice": "20000", "hprice": "", "mallName": "중고나라", "productId": "1004", "productType": "5",
+     "brand": "스파오", "maker": "", "category1": "패션의류", "category2": "남성의류", "category3": "점퍼", "category4": ""},
+    {"title": "<b>스파오</b> 가격 정보 없는 상품", "link": "https://search.shopping.naver.com/catalog/1005",
+     "image": "", "lprice": "0", "hprice": "", "mallName": "스파오 공식스토어", "productId": "1005", "productType": "2",
+     "brand": "스파오", "maker": "", "category1": "패션의류", "category2": "", "category3": "", "category4": ""},
+    {"title": "<b>스파오</b> 히트텍 대항 발열내의", "link": "https://search.shopping.naver.com/catalog/1006",
+     "image": "", "lprice": "9900", "hprice": "", "mallName": "재판매몰", "productId": "1006", "productType": "2",
+     "brand": "스파오", "maker": "", "category1": "패션의류", "category2": "언더웨어", "category3": "", "category4": ""}
+  ]
+}
