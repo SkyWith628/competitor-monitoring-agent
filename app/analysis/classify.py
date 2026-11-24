@@ -7,11 +7,13 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from app.analysis.features import event_line
-from app.analysis.llm_client import CLASSIFY_MODEL, ask_json
+from app.analysis.llm_client import CLASSIFY_MODEL, LLMTruncated, ask_json
 from app.core.models import Category, ChangeEvent
 
 PROMPT = (Path(__file__).parent / "prompts" / "classify.md").read_text(encoding="utf-8")
 BATCH_SIZE = 30
+# 생각(thinking) 토큰도 여기에 포함된다. 4096 은 30건 묶음에서 응답이 중간에 끊겼다 (2026-11-24 첫 실제 실행)
+MAX_TOKENS = 16000
 log = logging.getLogger(__name__)
 
 
@@ -30,7 +32,15 @@ def _apply(batch: list[ChangeEvent]) -> list[ChangeEvent]:
     """한 배치를 분류해 결과를 채우고, 라벨을 못 받은 이벤트를 돌려준다."""
     by_id = {e.id: e for e in batch}
     payload = "\n".join(event_line(e) for e in batch)
-    result = ask_json(CLASSIFY_MODEL, PROMPT, payload, _Labels, max_tokens=4096, effort="low")
+    try:
+        result = ask_json(CLASSIFY_MODEL, PROMPT, payload, _Labels, max_tokens=MAX_TOKENS, effort="low")
+    except LLMTruncated:
+        if len(batch) == 1:
+            raise  # 한 건도 못 담으면 묶음 크기 문제가 아니다
+        # 응답이 끊겼으면 묶음을 반으로 나눠 다시 묻는다
+        half = len(batch) // 2
+        log.warning("분류 응답이 끊겨 %d건 묶음을 %d건·%d건으로 나눠 다시 묻습니다", len(batch), half, len(batch) - half)
+        return _apply(batch[:half]) + _apply(batch[half:])
     for lab in result.labels:
         if (ev := by_id.pop(lab.id, None)) is None:
             continue  # 입력에 없던 id 이거나 같은 id 중복 — 무시

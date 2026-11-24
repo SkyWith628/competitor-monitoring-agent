@@ -6,7 +6,7 @@ from datetime import datetime
 import httpx
 
 from app.core.base_collector import BaseCollector
-from app.core.config import env
+from app.core.config import env_key
 from app.core.models import RawItem, SourceType
 
 API = "https://www.googleapis.com/youtube/v3"
@@ -61,7 +61,7 @@ class YoutubeCollector(BaseCollector):
 
     def _get(self, endpoint: str, params: dict) -> dict:
         """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
-        key = env("YOUTUBE_API_KEY")
+        key = env_key("YOUTUBE_API_KEY")
         if not key:
             raise RuntimeError(".env 에 YOUTUBE_API_KEY 를 채워야 합니다")
         self.throttle()

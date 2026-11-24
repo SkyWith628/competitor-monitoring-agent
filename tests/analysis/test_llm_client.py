@@ -83,3 +83,13 @@ def test_system_prompt_is_cached(monkeypatch):
     monkeypatch.setattr(llm_client, "_client", lambda: SimpleNamespace(messages=_Messages()))
     llm_client._call("claude-haiku-5-5", "분류 규칙", "u", 100, "low")
     assert captured["system"] == [{"type": "text", "text": "분류 규칙", "cache_control": {"type": "ephemeral"}}]
+
+
+def test_truncated_response_raises_without_retry(fresh_db, fake_call):
+    # max_tokens 에 걸려 끊긴 응답은 같은 요청을 다시 보내도 또 끊긴다 → 재시도 없이 바로 알린다
+    sent, replies = fake_call
+    replies.append(_resp(text='{"ok": tr', stop_reason="max_tokens", output_tokens=4096))
+    with pytest.raises(llm_client.LLMTruncated, match="max_tokens"):
+        llm_client.ask_json("claude-haiku-5-5", "sys", "u", _Out)
+    assert len(sent) == 1
+    assert repo.llm_usage()[0]["output_tokens"] == 4096  # 끊긴 호출도 토큰은 썼으니 기록한다

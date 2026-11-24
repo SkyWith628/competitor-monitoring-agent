@@ -9,7 +9,7 @@ from typing import TypeVar
 import anthropic
 from pydantic import BaseModel, ValidationError
 
-from app.core.config import env
+from app.core.config import env, env_key
 
 CLASSIFY_MODEL = env("CLASSIFY_MODEL", "claude-haiku-5-5")
 REPORT_MODEL = env("REPORT_MODEL", "claude-opus-5-5")
@@ -18,13 +18,21 @@ T = TypeVar("T", bound=BaseModel)
 log = logging.getLogger(__name__)
 
 
+class LLMTruncated(ValueError):
+    """응답이 max_tokens 에 걸려 중간에서 끊겼다. 같은 요청을 다시 보내도 또 끊기므로 재시도하지 않는다.
+
+    부르는 쪽이 입력을 줄여(예: 묶음을 반으로 나눠) 다시 물어야 한다.
+    """
+
+
 class LLMRefusal(RuntimeError):
     pass
 
 
 @lru_cache
 def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic()  # ANTHROPIC_API_KEY 를 환경변수에서 읽음
+    # env_key() 로 읽어 값 끝의 줄바꿈을 잘라낸다. 값이 없으면(None) SDK 가 다른 인증 수단을 찾는다
+    return anthropic.Anthropic(api_key=env_key("ANTHROPIC_API_KEY"))
 
 
 def _call(model: str, system: str, user: str, max_tokens: int, effort: str):
@@ -54,12 +62,16 @@ def ask_json(model: str, system: str, user: str, schema: type[T], *,
         log_usage(getattr(resp, "model", None) or model, resp.usage)  # 대체 모델로 응답했으면 그 모델로
         if resp.stop_reason == "refusal":  # 거절돼도 토큰은 썼으니 기록은 먼저
             raise LLMRefusal(str(resp.stop_details))
+        if resp.stop_reason == "max_tokens":
+            # 생각(thinking) 토큰도 max_tokens 에 포함된다. JSON 이 중간에서 끊겨 파싱할 수 없다
+            raise LLMTruncated(f"LLM 응답이 max_tokens({max_tokens})에 걸려 끊겼습니다 "
+                               f"(출력 {getattr(resp.usage, 'output_tokens', '?')} 토큰)")
         text = "".join(b.text for b in resp.content if b.type == "text")
         try:
             return schema.model_validate(json.loads(_strip_fence(text)))
         except (json.JSONDecodeError, ValidationError) as e:
             last_err = e
-    raise ValueError(f"LLM JSON 검증 실패: {last_err}")
+    raise ValueError(f"LLM JSON 검증 실패 (stop_reason={resp.stop_reason}): {last_err}")
 
 
 def _strip_fence(text: str) -> str:

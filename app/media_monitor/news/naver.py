@@ -15,7 +15,7 @@ from email.utils import parsedate_to_datetime
 import httpx
 
 from app.core.base_collector import BaseCollector
-from app.core.config import env
+from app.core.config import env_key
 from app.core.models import RawItem, SourceType
 from app.media_monitor.news.rules import has_excluded, mentions_brand
 
@@ -69,7 +69,7 @@ class NaverNewsCollector(BaseCollector):
 
     def _fetch(self, keyword: str) -> list[dict]:
         """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
-        client_id, secret = env("NAVER_CLIENT_ID"), env("NAVER_CLIENT_SECRET")
+        client_id, secret = env_key("NAVER_CLIENT_ID"), env_key("NAVER_CLIENT_SECRET")
         if not client_id or not secret:
             raise RuntimeError(".env 에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET (API HUB 인증 정보) 를 채워야 합니다")
         self.throttle()
