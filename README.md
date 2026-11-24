@@ -54,9 +54,22 @@ web/                 🅳 D  대시보드·리포트 열람 웹(Next.js → Verc
 ```powershell
 python -m venv .venv; .venv\Scripts\activate
 pip install -e ".[dev]" -c constraints.txt
-copy .env.example .env      # 키 채우기
+copy .env.example .env      # 키 채우기 (각 값을 어디서 받는지는 파일 안 설명 참고)
 python -m app init-db
 pytest -q
+```
+
+### 로컬에서 실제 키로 돌려 보기
+`.env`의 `DATABASE_URL`을 비워 두면 로컬 SQLite 파일(`data/monitor.db`)에만 기록되어 운영 데이터와 섞이지 않는다.
+슬랙·메일 값을 비워 두면 아무것도 발송되지 않는다.
+
+```powershell
+python -m app doctor                              # 빠진 값·여러 줄로 들어간 값 확인
+python -m app collect --source news --brand spao  # 뉴스 (네이버 + 구글)
+python -m app collect --source sns --brand spao   # 인스타 + 유튜브
+python -m app collect --source site --brand spao  # 상품·가격 (쇼핑 검색 키가 있을 때만)
+python -m app classify                            # 수집한 이벤트 분류 (LLM 호출, 비용 발생)
+python -m app status                              # 수집·분류 현황
 ```
 
 | 명령 | 담당 |
