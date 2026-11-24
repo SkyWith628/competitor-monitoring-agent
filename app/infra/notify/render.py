@@ -22,9 +22,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, pass_context
+from markupsafe import Markup, escape
 
 from app.core.models import ChangeEvent, ChangeType, WeeklyReport
 
@@ -72,6 +74,73 @@ def _md_text(text: object) -> str:
     return s
 
 
+# --------------------------------------------------------------------------- 근거 인용 [#id] → 원문 링크
+
+CITATION = re.compile(r"\[#(\d+)\]")  # C(analysis/citations.py)가 문장 끝에 붙이는 근거 표시
+Links = dict[int, str]  # 이벤트 id → 원문 주소. CLI 가 그 주의 이벤트에서 만들어 넘긴다
+
+
+def _cite_url(links: Links | None, event_id: str) -> str | None:
+    """인용한 이벤트의 원문 주소. 모르는 id 이거나 http(s) 주소가 아니면 None → 표시를 글자 그대로 둔다."""
+    url = _safe_url((links or {}).get(int(event_id)))
+    return None if url == "#" else url
+
+
+def _cite_html(text: object, links: Links | None) -> Markup:
+    """'가격 인하 [#12]' → '가격 인하 <a href="…">[#12]</a>'. 글자와 주소는 모두 HTML 이스케이프한다."""
+    out, pos, s = Markup(""), 0, str(text)
+    for m in CITATION.finditer(s):
+        out += escape(s[pos:m.start()])
+        url = _cite_url(links, m[1])
+        if url:
+            out += Markup('<a href="{}" style="color:#1d4ed8;text-decoration:underline;">{}</a>').format(url, m[0])
+        else:
+            out += escape(m[0])
+        pos = m.end()
+    return out + escape(s[pos:])
+
+
+def _cite_md(text: object, links: Links | None) -> str:
+    """'가격 인하 [#12]' → '가격 인하 [#12](주소)'. 주소 안의 괄호·공백은 링크 문법을 끊으므로 퍼센트 인코딩."""
+    def repl(m: re.Match) -> str:
+        url = _cite_url(links, m[1])
+        if not url:
+            return m[0]
+        for ch, enc in (("(", "%28"), (")", "%29"), (" ", "%20"), ("<", "%3C"), (">", "%3E")):
+            url = url.replace(ch, enc)
+        return f"{m[0]}({url})"
+
+    return CITATION.sub(repl, str(text))
+
+
+def _cite_slack(line: str, links: Links | None, limit: int) -> str:
+    """이미 이스케이프한 한 줄의 [#12] 를 <주소|#12> 로. 줄이 limit 을 넘게 되면 남은 표시는 글자로 둔다.
+
+    구글 뉴스 주소는 수백 자라 표시 몇 개만 바꿔도 슬랙 섹션 제한(3000자)에 가까워진다.
+    """
+    def repl(m: re.Match) -> str:
+        nonlocal room
+        url = _cite_url(links, m[1])
+        if not url or len(url) > SLACK_URL_LIMIT - 500:
+            return m[0]
+        url = url.replace("&", "&amp;").replace("<", "%3C").replace(">", "%3E").replace("|", "%7C")
+        linked = f"<{url}|#{m[1]}>"
+        if len(linked) - len(m[0]) > room:
+            return m[0]
+        room -= len(linked) - len(m[0])
+        return linked
+
+    room = limit - len(line)
+    return CITATION.sub(repl, line)
+
+
+@pass_context
+def _cite_filter(ctx, text: object) -> str:
+    """템플릿 필터 `cite`: 지금 그리는 형식(HTML / Markdown)에 맞게 근거 표시를 링크로 바꾼다."""
+    links = ctx.get("links")
+    return _cite_html(text, links) if ctx.eval_ctx.autoescape else _cite_md(text, links)
+
+
 # 템플릿 이름이 weekly.html.j2 라서 select_autoescape(["html"])로는 이스케이프가 켜지지 않는다 → 직접 판별
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -81,6 +150,7 @@ _env = Environment(
 )
 _env.filters["safe_url"] = _safe_url
 _env.filters["md"] = _md_text
+_env.filters["cite"] = _cite_filter
 
 
 def _brand(value: str) -> str:
@@ -242,7 +312,7 @@ def stats_view(stats: dict | None, prev_stats: dict | None = None) -> dict:
 
 # --------------------------------------------------------------------------- 메일 / Markdown
 
-def _context(report: WeeklyReport, prev_stats: dict | None) -> dict:
+def _context(report: WeeklyReport, prev_stats: dict | None, links: Links | None = None) -> dict:
     """HTML·Markdown 템플릿이 함께 쓰는 변수. 두 형식의 내용이 어긋나지 않도록 한 곳에서 만든다."""
     return {
         "r": report,
@@ -254,15 +324,18 @@ def _context(report: WeeklyReport, prev_stats: dict | None) -> dict:
         "change_label": CHANGE_LABEL,
         "summaries": [s for s in report.brand_summaries if s.highlights],  # 할 말이 없는 브랜드는 제목도 뺀다
         "stats": stats_view(report.stats, prev_stats),
+        "links": links or {},  # 근거 표시 [#id] → 원문 주소 (cite 필터가 쓴다)
     }
 
 
-def to_html(report: WeeklyReport, prev_stats: dict | None = None) -> str:
+def to_html(report: WeeklyReport, prev_stats: dict | None = None, links: Links | None = None) -> str:
     """메일 본문 HTML(완결된 문서 한 장)을 만든다.
 
     Args:
         report: C가 만든 주간 리포트.
         prev_stats: 전주 리포트의 stats. 주면 수치 표에 전주 대비 증감을 함께 표시한다.
+        links: 이벤트 id → 원문 주소. 주면 요약·인사이트의 근거 표시 `[#12]` 가 그 주소로 가는 링크가 된다.
+            없는 id 나 http(s) 가 아닌 주소는 글자 그대로 둔다.
 
     Returns:
         `<!doctype html>` 로 시작하는 문자열. 외부 CSS·JS·이미지 없이 인라인 스타일과 table 레이아웃만
@@ -274,16 +347,16 @@ def to_html(report: WeeklyReport, prev_stats: dict | None = None) -> str:
     예:
         email.send_html(f"[경쟁사 주간 리포트] {r.week}", to_html(r, prev), text=to_markdown(r, prev))
     """
-    return _env.get_template("weekly.html.j2").render(**_context(report, prev_stats))
+    return _env.get_template("weekly.html.j2").render(**_context(report, prev_stats, links))
 
 
-def to_markdown(report: WeeklyReport, prev_stats: dict | None = None) -> str:
+def to_markdown(report: WeeklyReport, prev_stats: dict | None = None, links: Links | None = None) -> str:
     """HTML과 같은 내용을 Markdown으로 만든다 (메일 text 파트·파일 보관용).
 
     인자는 `to_html` 과 같다. 반환값은 줄바꿈 하나로 끝나는 Markdown 문자열. 표·링크 문법을 깨는 문자
     (`|`, `[`, `]`, `\\`)는 이스케이프한다.
     """
-    return _env.get_template("weekly.md.j2").render(**_context(report, prev_stats)).strip() + "\n"
+    return _env.get_template("weekly.md.j2").render(**_context(report, prev_stats, links)).strip() + "\n"
 
 
 # --------------------------------------------------------------------------- 슬랙
@@ -391,7 +464,7 @@ def to_slack_blocks(report: WeeklyReport, full_report_url: str | None = None) ->
     return blocks
 
 
-def to_slack_brand_blocks(report: WeeklyReport) -> list[list[dict]]:
+def to_slack_brand_blocks(report: WeeklyReport, links: Links | None = None) -> list[list[dict]]:
     """슬랙 후속 메시지들: 하이라이트가 있는 브랜드마다 블록 목록 하나 (설계서 "너무 길면 브랜드별 분할").
 
     Returns:
@@ -403,7 +476,8 @@ def to_slack_brand_blocks(report: WeeklyReport) -> list[list[dict]]:
         if not s.highlights:
             continue
         heading = f"*[{_esc(_brand(s.brand.value))}] 브랜드 요약 · {_esc(report.week)}*"
-        blocks = _sections(heading, [f"• {_esc_clip(h, 1000)}" for h in s.highlights])
+        # 근거 표시 [#12] 는 원문 링크로. 한 줄이 2500자를 넘지 않는 만큼만 바꾼다 (섹션 제한 3000자)
+        blocks = _sections(heading, [_cite_slack(f"• {_esc_clip(h, 1000)}", links, 2500) for h in s.highlights])
         out.append(blocks[:SLACK_MAX_BLOCKS])
     return out
 

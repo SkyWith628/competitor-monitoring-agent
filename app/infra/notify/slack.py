@@ -179,7 +179,7 @@ def send_blocks(blocks: list[dict], fallback_text: str, webhook_env: str = "SLAC
 
 
 def send_report(report: WeeklyReport, full_report_url: str | None = None, start: int = 0,
-                on_sent: Callable[[int], None] | None = None) -> None:
+                on_sent: Callable[[int], None] | None = None, links: dict[int, str] | None = None) -> None:
     """주간 리포트 발송: 본 메시지(0번) → 브랜드별 후속 메시지(1번~).
 
     Incoming Webhook은 스레드 답글을 달 수 없어서, 후속 메시지는 같은 채널에 연달아 보낸다.
@@ -190,6 +190,7 @@ def send_report(report: WeeklyReport, full_report_url: str | None = None, start:
         report: 보낼 리포트.
         full_report_url: 본 메시지의 "전체 리포트 보기" 버튼 주소. 없으면 버튼을 뺀다.
         start: 건너뛸 메시지 수(= 지난 실행에서 이미 나간 개수). 0 이면 처음부터.
+        links: 이벤트 id → 원문 주소. 주면 브랜드별 요약의 근거 표시 `[#12]` 가 원문 링크가 된다.
         on_sent: 메시지 하나가 나갈 때마다 그 번호(0부터)로 불린다. CLI 가 여기서 진행 상황을 DB 에
             기록해 두기 때문에, 중간에 실패해도 다음 실행이 이어서 보낼 수 있다.
 
@@ -203,7 +204,7 @@ def send_report(report: WeeklyReport, full_report_url: str | None = None, start:
     tldr = " ".join((report.tldr or "").split())
     title = f"경쟁사 주간 리포트 {report.week}"
     messages = [(render.to_slack_blocks(report, full_report_url), f"{title}: {tldr}" if tldr else title)]
-    messages += [(blocks, f"{title} 브랜드별 요약") for blocks in render.to_slack_brand_blocks(report)]
+    messages += [(blocks, f"{title} 브랜드별 요약") for blocks in render.to_slack_brand_blocks(report, links)]
     for i, (blocks, fallback) in enumerate(messages):
         if i < start:
             continue

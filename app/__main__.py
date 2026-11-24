@@ -24,7 +24,7 @@ A·B·C가 알아둘 약속
     - 종료 코드: 0 = 정상, 1 = 일부라도 실패(Actions 에서 빨갛게 보인다), 2 = 명령 인자가 잘못됨.
 
 import 를 함수 안에서 하는 이유
-    명령 하나를 실행할 때 다른 역할의 모듈까지 전부 불러오지 않기 위해서다. 예를 들어 playwright 가
+    명령 하나를 실행할 때 다른 역할의 모듈까지 전부 불러오지 않기 위해서다. 예를 들어 수집용 패키지가
     설치되지 않은 환경에서도 `report` 는 돌아야 한다. 테스트에서 일부만 가짜로 바꾸기도 쉽다.
 """
 from __future__ import annotations
@@ -268,8 +268,11 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
             raise typer.Exit(1) from None
     prev = repo.get_report(before)
     prev_stats = prev.stats if prev else None  # 부록 수치표의 전주 대비
-    html = render.to_html(r, prev_stats=prev_stats)
-    markdown = render.to_markdown(r, prev_stats=prev_stats)
+    week_events = repo.events_of_week(week)
+    # 요약·인사이트의 근거 표시 [#id] 를 원문 링크로 바꿀 때 쓴다 (인용되는 id 는 모두 그 주의 이벤트다)
+    links = {e.id: e.url for e in week_events if e.id is not None}
+    html = render.to_html(r, prev_stats=prev_stats, links=links)
+    markdown = render.to_markdown(r, prev_stats=prev_stats, links=links)
     out = ROOT / "data" / f"report-{week}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -277,7 +280,7 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     typer.echo(f"리포트 생성: {out}")
 
     # 수집·분류가 덜 끝난 채로 리포트를 만들면 그 이벤트는 조용히 빠진다 — 알린다
-    unclassified = sum(1 for e in repo.events_of_week(week) if e.category is None)
+    unclassified = sum(1 for e in week_events if e.category is None)
     if unclassified:
         typer.echo(f"경고: {week} 이벤트 {unclassified}건이 미분류라 리포트에서 빠졌습니다", err=True)
     if dry_run:
@@ -296,7 +299,7 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
 
     def send_slack() -> None:
         done = sum(1 for key in sent if key.startswith("slack#"))  # 지난 실행에서 이미 나간 메시지 수
-        slack.send_report(r, full_report_url=env("REPORT_URL") or None, start=done,
+        slack.send_report(r, full_report_url=env("REPORT_URL") or None, start=done, links=links,
                           on_sent=lambda i: record(f"slack#{i}"))
 
     senders = {
@@ -464,6 +467,10 @@ def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 �
 
     typer.echo("[수집 API]")
     need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 뉴스", "네이버 뉴스 수집이 실패합니다", "경고")
+    if (env("NAVER_SHOP_CLIENT_ID") or "").strip() or (env("NAVER_SHOP_CLIENT_SECRET") or "").strip():
+        need(["NAVER_SHOP_CLIENT_ID", "NAVER_SHOP_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다", "경고")
+    else:
+        need(["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"], "네이버 쇼핑", "상품·가격 수집이 실패합니다 (뉴스 키를 같이 씀)", "경고")
     need(["YOUTUBE_API_KEY"], "유튜브", "유튜브 수집이 실패합니다", "경고")
     need(["IG_ACCESS_TOKEN", "IG_BUSINESS_ACCOUNT_ID"], "인스타그램", "인스타그램 수집이 실패합니다", "경고")
 

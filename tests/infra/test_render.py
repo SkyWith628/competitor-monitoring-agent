@@ -321,3 +321,52 @@ def test_stats_metric_groups_do_not_become_empty_brand_columns():
 def test_markdown_tldr_stays_on_one_quote_line():
     md = to_markdown(_report(tldr="첫 줄\n\n# 둘째 줄"))
     assert "> **TL;DR** 첫 줄 # 둘째 줄\n" in md
+
+
+# ---------------------------------------------------------------- 근거 인용 [#id] → 원문 링크
+
+LINKS = {1: "https://news.example.com/a?x=1&y=2", 2: "https://shop.example.com/p_(2)", 3: "javascript:alert(1)"}
+
+
+def _cited() -> WeeklyReport:
+    return _report(
+        brand_summaries=[BrandSummary(brand=Brand.UNIQLO, event_ids=[1, 2, 3, 99], highlights=[
+            "히트텍 <b>인하</b> [#1][#2]", "위험한 주소 [#3], 모르는 id [#99]"])],
+        insights=["두 브랜드가 같은 주에 인하 [#1]"])
+
+
+def test_html_citations_become_links_and_text_stays_escaped():
+    html = to_html(_cited(), links=LINKS)
+    assert '<a href="https://news.example.com/a?x=1&amp;y=2"' in html and ">[#1]</a>" in html
+    assert html.count(">[#1]</a>") == 2  # 요약과 인사이트 양쪽
+    assert "&lt;b&gt;인하&lt;/b&gt;" in html  # LLM 문장 안의 태그는 여전히 글자로
+    assert "javascript:" not in html and "[#3]" in html and "[#99]" in html  # 못 쓰는 주소·모르는 id 는 글자 그대로
+    assert ">[#3]</a>" not in html and ">[#99]</a>" not in html
+
+
+def test_markdown_citations_become_links():
+    md = to_markdown(_cited(), links=LINKS)
+    assert "[#1](https://news.example.com/a?x=1&y=2)" in md
+    assert "[#2](https://shop.example.com/p_%282%29)" in md  # 괄호는 링크 문법을 끊으므로 인코딩
+    assert "[#3]," in md and "[#99]" in md and "javascript:" not in md
+
+
+def test_citations_stay_plain_without_links():
+    assert "[#1]" in to_html(_cited()) and "<a href" not in to_html(_cited()).split("브랜드별 요약")[1].split("부록")[0]
+    assert "[#1][#2]" in to_markdown(_cited())
+
+
+def test_slack_citations_become_links_within_limits():
+    out = to_slack_brand_blocks(_cited(), LINKS)
+    text = _mrkdwn(out[0])
+    assert "<https://news.example.com/a?x=1&amp;y=2|#1>" in text
+    assert "&lt;b&gt;인하&lt;/b&gt;" in text
+    assert "[#3]" in text and "[#99]" in text and "javascript:" not in text
+    # 주소가 아주 길면(구글 뉴스 주소 등) 줄이 제한을 넘지 않는 만큼만 링크로 바꾼다
+    long_links = dict.fromkeys(range(1, 6), "https://news.google.com/rss/articles/" + "x" * 900)
+    r = _report(brand_summaries=[BrandSummary(brand=Brand.SPAO, event_ids=[1, 2, 3, 4, 5],
+                                              highlights=["가격 인하 [#1][#2][#3][#4][#5]"] * 4)])
+    blocks = to_slack_brand_blocks(r, long_links)[0]
+    _assert_slack_limits(blocks)
+    lines = _mrkdwn(blocks).split("\n")[1:]
+    assert all(line.count("|#") == 2 and "[#3][#4][#5]" in line for line in lines)  # 2개만 링크, 나머지는 글자

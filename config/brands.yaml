@@ -1,10 +1,17 @@
-# 브랜드별 수집 대상 (담당: B 주도, 사이트 URL은 A가 채움)
-# ⚠ URL·계정은 1주차에 직접 확인 후 채울 것. robots.txt 에서 금지된 경로는 넣지 않는다.
+# 브랜드별 수집 대상 (담당: B 주도, site 항목은 A)
+# site.shopping — 네이버 쇼핑 검색 API로 상품·가격을 받는다 (공식몰은 robots.txt·봇 차단으로 직접 수집하지 않음)
+#   queries      검색어. 검색어마다 최신 등록순 max_items(기본 300)개까지 본다
+#   brand_names  상품의 '브랜드' 칸이 이 중 하나인 상품만 남긴다 (공백·대소문자 무시)
+#   malls        (선택) 공식 판매처 이름. 채우면 그 판매처 상품만 남긴다 → 재판매처 최저가가 섞이지 않는다
+#                실제 수집 결과의 mallName 을 보고 채울 것 (TODO(A))
 brands:
   spao:
     name: 스파오
     site:
-      urls: []            # TODO(A): 메인, 신상품, 세일/기획전, 주요 카테고리
+      shopping:
+        queries: ["스파오"]
+        brand_names: ["스파오", "SPAO"]
+        malls: []
     news:
       keywords: ["스파오", "SPAO"]
       exclude: []         # TODO(B): 무관 기사 제외어
@@ -15,7 +22,10 @@ brands:
   8seconds:
     name: 에잇세컨즈
     site:
-      urls: []
+      shopping:
+        queries: ["에잇세컨즈"]
+        brand_names: ["에잇세컨즈", "8seconds", "8 seconds"]
+        malls: []
     news:
       keywords: ["에잇세컨즈", "8seconds"]
       exclude: []
@@ -26,7 +36,10 @@ brands:
   musinsa_standard:
     name: 무신사 스탠다드
     site:
-      urls: []
+      shopping:
+        queries: ["무신사 스탠다드"]
+        brand_names: ["무신사 스탠다드", "MUSINSA STANDARD"]
+        malls: []
     news:
       keywords: ["무신사 스탠다드", "무신사스탠다드"]
       exclude: []
@@ -37,7 +50,10 @@ brands:
   uniqlo:
     name: 유니클로
     site:
-      urls: []
+      shopping:
+        queries: ["유니클로"]
+        brand_names: ["유니클로", "UNIQLO"]
+        malls: []
     news:
       keywords: ["유니클로", "UNIQLO"]
       # 실데이터(2026-11-23)에서 유니클로가 스치듯 나온 무관 기사만 뺀다

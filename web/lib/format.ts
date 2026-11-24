@@ -101,3 +101,31 @@ export function sendStateView(s: SendState): { text: string; className: string }
   const missing = s.missing.map((c) => CHANNEL_LABEL[c] ?? c).join(", ");
   return { text: `◐ 일부 발송 (미발송: ${missing})`, className: "state bad" };
 }
+
+/*
+ * 근거 표시: 요약·인사이트 문장 끝의 "[#12]" 는 그 문장의 근거가 된 이벤트 id 다 (app/analysis/citations.py).
+ * 메일·슬랙(app/infra/notify/render.py)과 같은 규칙으로, 주소를 아는 표시만 원문 링크로 바꾼다.
+ */
+const CITATION = /\[#(\d+)\]/g;
+
+/** 글 여러 개에서 인용된 이벤트 id 를 중복 없이 모은다. */
+export function citedIds(texts: string[]): number[] {
+  const ids = new Set<number>();
+  for (const t of texts) for (const m of t.matchAll(CITATION)) ids.add(Number(m[1]));
+  return [...ids];
+}
+
+export type CitationPart = { text: string; id?: number };
+
+/** "가격 인하 [#12]" → [{text: "가격 인하 "}, {text: "[#12]", id: 12}] */
+export function splitCitations(text: string): CitationPart[] {
+  const parts: CitationPart[] = [];
+  let pos = 0;
+  for (const m of text.matchAll(CITATION)) {
+    if (m.index > pos) parts.push({ text: text.slice(pos, m.index) });
+    parts.push({ text: m[0], id: Number(m[1]) });
+    pos = m.index + m[0].length;
+  }
+  if (pos < text.length) parts.push({ text: text.slice(pos) });
+  return parts;
+}

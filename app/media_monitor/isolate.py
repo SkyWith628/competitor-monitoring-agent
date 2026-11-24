@@ -30,6 +30,7 @@ class Isolated:
 class _SafeCollector:
     def __init__(self, group: Isolated, cls: type, brand: Brand, cfg: dict) -> None:
         self.group, self.cls, self.brand, self.cfg = group, cls, brand, cfg
+        self.source: str = getattr(cls, "source", None) or getattr(cls, "__name__", repr(cls))  # 실패해도 어느 수집기인지 알 수 있게
 
     def collect(self) -> list:
         try:
@@ -37,5 +38,5 @@ class _SafeCollector:
         except NotImplementedError:
             self.group.not_implemented += 1
         except Exception as e:  # noqa: BLE001 — 한 수집기 실패가 다른 수집기를 멈추지 않게
-            self.group.failures.append(f"{getattr(self.cls, 'source', self.cls.__name__)}: {e!r}")
+            self.group.failures.append(f"{self.source}: {e!r}")
         return []

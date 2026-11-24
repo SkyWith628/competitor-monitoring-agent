@@ -24,7 +24,7 @@
 ### {{ brand_label.get(s.brand.value, s.brand.value) }}
 
 {% for h in s.highlights %}
-- {{ h }}
+- {{ h | cite }}
 {% endfor %}
 
 {% else %}
@@ -34,7 +34,7 @@
 ## 💡 인사이트
 
 {% for i in r.insights %}
-- {{ i }}
+- {{ i | cite }}
 {% else %}
 - (없음)
 {% endfor %}

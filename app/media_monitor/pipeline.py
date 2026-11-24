@@ -62,19 +62,10 @@ def run_sns(brand: Brand) -> list[ChangeEvent]:
     """
     cfg = brands_config()[brand.value]["sns"]
     events: list[ChangeEvent] = []
-    failures: list[str] = []
-    not_implemented = 0
-    collectors = (InstagramCollector, YoutubeCollector)
+    collectors = Isolated(InstagramCollector, YoutubeCollector)  # run_news 와 같은 실패 격리
     for cls in collectors:
         collector = cls(brand, cfg)
-        try:
-            items = collector.collect()
-        except NotImplementedError:
-            not_implemented += 1
-            continue
-        except Exception as e:  # noqa: BLE001 — 한 수집기 실패가 다른 수집기를 멈추지 않게
-            failures.append(f"{collector.source}: {e!r}")
-            continue
+        items = collector.collect()  # 실패했거나 구현 전이면 빈 목록
         history = repo.recent_posts(brand, source=collector.source, limit=30)
         events += detect_spikes(items, history)
         events += [ChangeEvent(brand=brand, change_type=ChangeType.SNS_NEW_POST, title=i.title,
@@ -82,11 +73,7 @@ def run_sns(brand: Brand) -> list[ChangeEvent]:
                    for i in items if _is_recent(i.published_at) and not repo.exists(i)]
         repo.save_items(items)  # 오래된 글도 저장은 한다 (급증 감지의 '평소' 비교 대상)
     repo.save_events(events)
-    if failures:
-        raise RuntimeError(f"SNS 수집 일부 실패 (나머지 이벤트 {len(events)}건은 저장함): "
-                           + "; ".join(failures))
-    if not_implemented == len(collectors):
-        raise NotImplementedError  # 전부 구현 전이면 CLI가 '아직 구현되지 않음'으로 표시
+    collectors.raise_if_failed(f"SNS 수집 일부 실패 (나머지 이벤트 {len(events)}건은 저장함)")
     return events
 
 
