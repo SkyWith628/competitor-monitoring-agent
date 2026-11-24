@@ -421,7 +421,7 @@ def status(strict: bool = typer.Option(False, help="멈춘 소스가 있으면 �
 @cli.command()
 def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 메일로 확인 메시지를 실제로 보낸다")) -> None:
     """설정 점검: 무엇이 빠졌고 어떤 기능이 그 때문에 안 되는지 알려준다. 비밀값은 출력하지 않는다."""
-    from app.core.config import env
+    from app.core.config import env, env_key
     from app.infra.notify import email, slack
     from app.infra.storage import db
 
@@ -434,7 +434,11 @@ def doctor(send_test: bool = typer.Option(False, help="운영 경고 채널과 �
         typer.echo(f"  [{level}] {name}: {detail}", err=level == "실패")
 
     def need(keys: list[str], name: str, purpose: str, level: str = "실패") -> None:
-        missing = [k for k in keys if not (env(k) or "").strip()]
+        try:
+            missing = [k for k in keys if not env_key(k)]
+        except RuntimeError as e:  # 값이 여러 줄로 들어간 경우 (env 가 이름을 밝혀 알린다)
+            line("실패", name, str(e))
+            return
         if missing:
             line(level, name, f"{', '.join(missing)} 없음 — {purpose}")
         else:

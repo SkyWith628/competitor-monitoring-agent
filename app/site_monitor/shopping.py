@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.core.base_collector import BaseCollector
-from app.core.config import env
+from app.core.config import env, env_key
 from app.core.models import RawItem, SourceType
 
 # 문서로 확인된 공식 주소(네이버 개발자센터). NAVER API HUB 에서 쇼핑 검색을 쓰는 경우에는
@@ -105,8 +105,8 @@ class NaverShoppingCollector(BaseCollector):
 
 def auth_headers(url: str) -> dict[str, str]:
     """주소에 맞는 인증 헤더. 키는 NAVER_SHOP_CLIENT_ID/SECRET, 없으면 뉴스와 같은 NAVER_CLIENT_ID/SECRET."""
-    client_id = env("NAVER_SHOP_CLIENT_ID") or env("NAVER_CLIENT_ID")
-    secret = env("NAVER_SHOP_CLIENT_SECRET") or env("NAVER_CLIENT_SECRET")
+    client_id = env_key("NAVER_SHOP_CLIENT_ID") or env_key("NAVER_CLIENT_ID")
+    secret = env_key("NAVER_SHOP_CLIENT_SECRET") or env_key("NAVER_CLIENT_SECRET")
     if not client_id or not secret:
         raise RuntimeError(".env 에 NAVER_SHOP_CLIENT_ID / NAVER_SHOP_CLIENT_SECRET (없으면 NAVER_CLIENT_ID / "
                            "NAVER_CLIENT_SECRET) 를 채워야 합니다")

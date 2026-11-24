@@ -10,7 +10,7 @@ from datetime import datetime
 import httpx
 
 from app.core.base_collector import BaseCollector
-from app.core.config import env
+from app.core.config import env_key
 from app.core.models import RawItem, SourceType
 
 API = "https://graph.facebook.com/v27.0"
@@ -61,7 +61,7 @@ class InstagramCollector(BaseCollector):
 
     def _get(self, fields: str) -> dict:
         """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
-        token, me = env("IG_ACCESS_TOKEN"), env("IG_BUSINESS_ACCOUNT_ID")
+        token, me = env_key("IG_ACCESS_TOKEN"), env_key("IG_BUSINESS_ACCOUNT_ID")
         if not token or not me:
             raise RuntimeError(".env 에 IG_ACCESS_TOKEN / IG_BUSINESS_ACCOUNT_ID 를 채워야 합니다")
         self.throttle()

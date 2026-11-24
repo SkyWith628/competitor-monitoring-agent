@@ -50,6 +50,37 @@ def test_spike_ratio_reads_detail_from_spike_detector():
     assert features.spike_ratio(e) == 25.0
 
 
+def test_classify_splits_batch_when_response_is_truncated(monkeypatch):
+    # 응답이 max_tokens 에 걸려 끊기면 묶음을 반으로 나눠 다시 묻는다
+    from app.analysis.llm_client import LLMTruncated
+
+    sizes = []
+
+    def fake(model, system, user, schema, **kw):
+        ids = [json.loads(line)["id"] for line in user.splitlines()]
+        sizes.append(len(ids))
+        if len(ids) > 2:
+            raise LLMTruncated("끊김")
+        return schema.model_validate({"labels": [{"id": i, "category": "마케팅", "importance": 2, "note": "n"}
+                                                 for i in ids]})
+
+    monkeypatch.setattr(classify_mod, "ask_json", fake)
+    events = classify_mod.classify([_ev(i) for i in range(1, 6)])
+    assert all(e.category == Category.MARKETING for e in events)
+    assert sizes == [5, 2, 3, 1, 2]
+
+
+def test_classify_gives_up_when_single_event_is_truncated(monkeypatch):
+    from app.analysis.llm_client import LLMTruncated
+
+    def fake(model, system, user, schema, **kw):
+        raise LLMTruncated("끊김")
+
+    monkeypatch.setattr(classify_mod, "ask_json", fake)
+    with pytest.raises(LLMTruncated):
+        classify_mod.classify([_ev(1)])
+
+
 # ---------- citations ----------
 def test_keep_grounded():
     s = ["가격 인하 [#1]", "근거 없음", "지어낸 근거 [#99]", "섞인 근거 [#1][#99]", "가격 인하 [#1]", "  묶음  [#1][#2] "]
