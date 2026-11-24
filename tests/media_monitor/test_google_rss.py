@@ -93,3 +93,65 @@ def test_minor_feed_problem_with_articles_is_not_an_error():
     c = _collector()
     c._fetch = lambda query: SAMPLE.replace("<channel>", "<channel><title>a &nbsp; b</title>")
     assert len(c.collect()) == 2
+
+
+# ---------- 429·503 재시도 ----------
+
+def _retrying(monkeypatch, *responses):
+    """_get 이 responses 를 차례로 돌려주는 수집기. (수집기, 호출 횟수 목록, 기다린 시간 목록)"""
+    import httpx
+
+    from app.media_monitor.news import google_rss
+
+    c = GoogleNewsCollector(Brand.SPAO, {"keywords": ["스파오"], "exclude": []})
+    c.request_interval_sec = 0
+    queue, calls, waits = list(responses), [], []
+    request = httpx.Request("GET", "https://news.google.com/rss/search")
+
+    def fake_get(url):
+        calls.append(url)
+        status, headers, text = queue.pop(0)
+        return httpx.Response(status, headers=headers, text=text, request=request)
+
+    c._get = fake_get
+    monkeypatch.setattr(google_rss, "_sleep", waits.append)
+    return c, calls, waits
+
+
+def test_retries_after_429_then_succeeds(monkeypatch):
+    c, calls, waits = _retrying(monkeypatch, (429, {}, "Too Many Requests"), (200, {}, SAMPLE))
+    assert len(c.collect()) == 2
+    assert len(calls) == 2 and waits == [5.0]
+
+
+def test_retry_after_header_is_respected(monkeypatch):
+    c, calls, waits = _retrying(monkeypatch, (429, {"Retry-After": "30"}, ""), (503, {}, ""), (200, {}, SAMPLE))
+    assert len(c.collect()) == 2
+    assert waits == [30.0, 20.0]  # 헤더가 더 길면 헤더를, 아니면 정해 둔 간격을 따른다
+
+
+def test_gives_up_after_two_retries(monkeypatch):
+    import httpx
+
+    c, calls, waits = _retrying(monkeypatch, (429, {}, ""), (429, {}, ""), (429, {}, ""))
+    with pytest.raises(httpx.HTTPStatusError):
+        c.collect()
+    assert len(calls) == 3 and waits == [5.0, 20.0]
+
+
+def test_does_not_wait_when_asked_to_wait_too_long(monkeypatch):
+    import httpx
+
+    c, calls, waits = _retrying(monkeypatch, (429, {"Retry-After": "3600"}, ""))
+    with pytest.raises(httpx.HTTPStatusError):
+        c.collect()
+    assert len(calls) == 1 and waits == []  # 한 시간을 기다리지 않고 이번 실행은 포기
+
+
+def test_other_errors_are_not_retried(monkeypatch):
+    import httpx
+
+    c, calls, waits = _retrying(monkeypatch, (404, {}, ""))
+    with pytest.raises(httpx.HTTPStatusError):
+        c.collect()
+    assert len(calls) == 1 and waits == []

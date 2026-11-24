@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from calendar import timegm
 from datetime import datetime
 from urllib.parse import quote, urlsplit
@@ -18,7 +19,14 @@ RSS_URL = "https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
 # 구글 뉴스 RSS 는 검색 한 번에 최대 100건만 준다. 꽉 차면 7일치 중 오래된 기사가 잘렸을 수 있다
 RSS_LIMIT = 100
 
+# 구글이 "요청이 많다"(429)거나 잠시 못 받는다(503)고 하면 기다렸다 다시 묻는다.
+# GitHub Actions 러너는 여러 사용자가 주소를 같이 써서, 우리 요청이 적어도 가끔 429 를 받는다 (2026-11-24 실제 발생)
+RETRY_STATUS = (429, 503)
+RETRY_WAITS = (5.0, 20.0)  # 초. 두 번까지 다시 시도
+MAX_RETRY_AFTER = 60.0  # 구글이 이보다 오래 기다리라고 하면 이번 실행에서는 포기한다 (다음 실행이 7일치를 다시 가져옴)
+
 log = logging.getLogger(__name__)
+_sleep = time.sleep  # 테스트에서 실제로 기다리지 않게 바꿔 끼운다
 
 # 구글 뉴스에 섞여 들어오는 뉴스가 아닌 사이트 (블로그·카페·쇼핑). 하위 도메인도 함께 차단된다.
 NON_NEWS_SITES = (
@@ -78,11 +86,30 @@ class GoogleNewsCollector(BaseCollector):
 
     def _fetch(self, query: str) -> str:
         """인터넷 접속은 여기서만 한다 (테스트 때 이 부분만 가짜로 바꿈)."""
-        self.throttle()
-        r = httpx.get(RSS_URL.format(q=quote(query)), headers={"User-Agent": USER_AGENT},
-                      timeout=10, follow_redirects=True)
+        url = RSS_URL.format(q=quote(query))
+        for wait in (*RETRY_WAITS, None):  # None = 마지막 시도 (더 기다리지 않음)
+            self.throttle()
+            r = self._get(url)
+            if r.status_code not in RETRY_STATUS or wait is None:
+                break
+            wait = max(wait, _retry_after(r))
+            if wait > MAX_RETRY_AFTER:
+                break
+            log.warning("구글 뉴스 %s: 응답 %d — %.0f초 뒤 다시 시도", self.brand.value, r.status_code, wait)
+            _sleep(wait)
         r.raise_for_status()
         return r.text
+
+    def _get(self, url: str) -> httpx.Response:
+        return httpx.get(url, headers={"User-Agent": USER_AGENT}, timeout=10, follow_redirects=True)
+
+
+def _retry_after(r: httpx.Response) -> float:
+    """Retry-After 헤더의 초 값. 없거나 숫자가 아니면(날짜 형식 등) 0."""
+    try:
+        return max(0.0, float(r.headers.get("Retry-After", "")))
+    except ValueError:
+        return 0.0
 
 
 def _is_non_news(site_url: str) -> bool:
