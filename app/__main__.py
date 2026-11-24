@@ -268,8 +268,11 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
             raise typer.Exit(1) from None
     prev = repo.get_report(before)
     prev_stats = prev.stats if prev else None  # 부록 수치표의 전주 대비
-    html = render.to_html(r, prev_stats=prev_stats)
-    markdown = render.to_markdown(r, prev_stats=prev_stats)
+    week_events = repo.events_of_week(week)
+    # 요약·인사이트의 근거 표시 [#id] 를 원문 링크로 바꿀 때 쓴다 (인용되는 id 는 모두 그 주의 이벤트다)
+    links = {e.id: e.url for e in week_events if e.id is not None}
+    html = render.to_html(r, prev_stats=prev_stats, links=links)
+    markdown = render.to_markdown(r, prev_stats=prev_stats, links=links)
     out = ROOT / "data" / f"report-{week}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -277,7 +280,7 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
     typer.echo(f"리포트 생성: {out}")
 
     # 수집·분류가 덜 끝난 채로 리포트를 만들면 그 이벤트는 조용히 빠진다 — 알린다
-    unclassified = sum(1 for e in repo.events_of_week(week) if e.category is None)
+    unclassified = sum(1 for e in week_events if e.category is None)
     if unclassified:
         typer.echo(f"경고: {week} 이벤트 {unclassified}건이 미분류라 리포트에서 빠졌습니다", err=True)
     if dry_run:
@@ -296,7 +299,7 @@ def report(week: str = typer.Option(None, help="예: 2026-W47 (기본: 지난주
 
     def send_slack() -> None:
         done = sum(1 for key in sent if key.startswith("slack#"))  # 지난 실행에서 이미 나간 메시지 수
-        slack.send_report(r, full_report_url=env("REPORT_URL") or None, start=done,
+        slack.send_report(r, full_report_url=env("REPORT_URL") or None, start=done, links=links,
                           on_sent=lambda i: record(f"slack#{i}"))
 
     senders = {

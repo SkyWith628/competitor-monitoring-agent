@@ -274,15 +274,15 @@ def report_env(tmp_path, monkeypatch):
         state.get_report.append(week)
         return state.prev.get(week)
 
-    def to_html(report, prev_stats=None):
+    def to_html(report, prev_stats=None, links=None):
         state.render.append(("html", prev_stats))
         return f"<html>{report.tldr}</html>"
 
-    def to_markdown(report, prev_stats=None):
+    def to_markdown(report, prev_stats=None, links=None):
         state.render.append(("md", prev_stats))
         return f"# {report.tldr}"
 
-    def send_report(report, full_report_url=None, start=0, on_sent=None):
+    def send_report(report, full_report_url=None, start=0, on_sent=None, links=None):
         """본 메시지(0번) + 후속 메시지 1개(1번). slack_fail_at 번째 메시지에서 실패할 수 있다."""
         if state.slack_error:
             raise state.slack_error
