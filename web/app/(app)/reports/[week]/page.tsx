@@ -1,10 +1,37 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getReport, reportChannels } from "@/lib/data";
-import { CHANGE_LABEL, CHANNEL_LABEL, brandLabel, formatTime, safeUrl, sendState } from "@/lib/format";
+import { eventLinks, getReport, reportChannels } from "@/lib/data";
+import {
+  CHANGE_LABEL,
+  CHANNEL_LABEL,
+  brandLabel,
+  citedIds,
+  formatTime,
+  safeUrl,
+  sendState,
+  splitCitations,
+} from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+/** 문장 안의 근거 표시 [#12] 를 원문 링크로. 주소를 모르거나 http(s) 가 아니면 글자 그대로 둔다. */
+function Cited({ text, links }: { text: string; links: Record<number, string> }) {
+  return (
+    <>
+      {splitCitations(text).map((part, i) => {
+        const url = part.id === undefined ? null : safeUrl(links[part.id]);
+        return url ? (
+          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+            {part.text}
+          </a>
+        ) : (
+          part.text
+        );
+      })}
+    </>
+  );
+}
 
 export default async function ReportPage({ params }: { params: Promise<{ week: string }> }) {
   const { week } = await params;
@@ -12,6 +39,7 @@ export default async function ReportPage({ params }: { params: Promise<{ week: s
   const [found, channels] = await Promise.all([getReport(week), reportChannels(week)]);
   if (!found) notFound();
   const { report, sent_at } = found;
+  const links = await eventLinks(citedIds([...report.brand_summaries.flatMap((s) => s.highlights), ...report.insights]));
   const send = sendState(sent_at, channels);
   const label = (list: string[]) => list.map((c) => CHANNEL_LABEL[c] ?? c).join(", ");
   const sendLine =
@@ -75,7 +103,9 @@ export default async function ReportPage({ params }: { params: Promise<{ week: s
             {s.highlights.length ? (
               <ul>
                 {s.highlights.map((h, i) => (
-                  <li key={i}>{h}</li>
+                  <li key={i}>
+                    <Cited text={h} links={links} />
+                  </li>
                 ))}
               </ul>
             ) : (
@@ -89,7 +119,9 @@ export default async function ReportPage({ params }: { params: Promise<{ week: s
         <h2>인사이트</h2>
         <ul>
           {report.insights.map((t, i) => (
-            <li key={i}>{t}</li>
+            <li key={i}>
+              <Cited text={t} links={links} />
+            </li>
           ))}
         </ul>
       </section>

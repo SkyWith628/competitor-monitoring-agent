@@ -210,6 +210,25 @@ export async function getReport(week: string): Promise<{ report: WeeklyReport; s
   return report ? { report, sent_at: row.sent_at } : null;
 }
 
+/**
+ * 이벤트 id → 원문 주소. 리포트의 근거 표시([#12])를 링크로 바꿀 때 쓴다.
+ * 링크는 부가 기능이라, 조회가 실패해도 리포트 화면은 떠야 한다 → 실패하면 빈 표(표시가 글자로 남는다).
+ */
+export async function eventLinks(ids: number[]): Promise<Record<number, string>> {
+  if (ids.length === 0) return {};
+  try {
+    const supabase = await createClient();
+    const rows = check<{ id: number; url: string | null }[]>(
+      await supabase.from("dashboard_events").select("id, url").in("id", ids.slice(0, 500)).limit(500),
+      "근거 이벤트 주소",
+    );
+    return Object.fromEntries(rows.filter((r) => r.url).map((r) => [r.id, r.url as string]));
+  } catch (e) {
+    console.error(e);
+    return {};
+  }
+}
+
 /** 이 주차 리포트가 끝까지 나간 채널 이름들. */
 export async function reportChannels(week: string): Promise<string[]> {
   const supabase = await createClient();
